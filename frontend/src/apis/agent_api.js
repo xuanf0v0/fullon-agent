@@ -26,6 +26,9 @@ export const agentApi = {
   generateAgentBoundSkill: (slug, payload) =>
     apiPost(`/api/agent/${encodeURIComponent(slug)}/self-skill/generate`, payload),
 
+  generateNewAgentSkillDraft: (payload) =>
+    apiPost('/api/agent/self-skill/generate', payload),
+
   uploadAgentBoundSkill: (slug, file) => {
     const body = new FormData()
     body.append('file', file)
@@ -100,11 +103,12 @@ export const agentApi = {
    */
   compressThreadContext: (threadId) => apiPost(`/api/v1/agents/sessions/${threadId}/compress`, {}),
 
-  createAgent: (payload, skillFile = null) => {
-    if (!skillFile) return apiPost('/api/agent', payload)
+  createAgent: (payload, skillFile = null, skillContent = null) => {
+    if (!skillFile && !skillContent) return apiPost('/api/agent', payload)
     const body = new FormData()
     body.append('agent', JSON.stringify(payload))
-    body.append('file', skillFile)
+    if (skillFile) body.append('file', skillFile)
+    else body.append('skill_content', skillContent)
     return apiPost('/api/agent/with-skill', body)
   },
 

@@ -30,7 +30,11 @@ from yuxi.modules.extensions.skills.bound import (
     get_agent_bound_skill,
     upload_agent_bound_skill,
 )
-from yuxi.modules.extensions.skills.generation import SkillDraftGenerationError, generate_bound_skill_draft
+from yuxi.modules.extensions.skills.generation import (
+    SkillDraftGenerationError,
+    generate_bound_skill_draft,
+    generate_new_skill_draft,
+)
 from yuxi.modules.extensions.skills.package import SkillEditConflict
 from yuxi.modules.identity.models import User
 
@@ -73,6 +77,10 @@ class BoundSkillGenerate(BaseModel):
     triggers: str | None = Field(default=None, max_length=1000)
     inputs_outputs: str | None = Field(default=None, max_length=1000)
     tools: list[str] = Field(default_factory=list, max_length=20)
+
+
+class NewBoundSkillGenerate(BoundSkillGenerate):
+    agent_name: str = Field(min_length=1, max_length=100)
 
 
 @agent_router.get("/backends")
@@ -132,22 +140,38 @@ async def create_agent(payload: AgentCreate, current_user: User = Depends(get_re
 @agent_router.post("/with-skill")
 async def create_agent_with_skill(
     agent: str = Form(...),
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(default=None),
+    skill_content: str | None = Form(default=None),
     current_user: User = Depends(get_required_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """附带单 Skill ZIP 的创建入口，共用 JSON 模型和创建事务。"""
+    """附带单 Skill ZIP 或 AI 草稿的创建入口，共用 JSON 模型和创建事务。"""
     try:
         payload = AgentCreate.model_validate_json(agent)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail="智能体创建参数无效") from exc
-    if not (file.filename or "").lower().endswith(".zip"):
-        raise HTTPException(status_code=422, detail="请上传 Skill ZIP 文件")
-    try:
-        file_bytes = await read_upload_with_limit(file, max_size_bytes=10 * 1024 * 1024, too_large_message="ZIP 文件不能超过 10 MiB")
-    except ValueError as exc:
-        raise HTTPException(status_code=413, detail=str(exc)) from exc
-    return await _create_agent_response(db, current_user, payload, skill_upload=(file.filename, file_bytes))
+    has_file = file is not None
+    has_content = bool((skill_content or "").strip())
+    if has_file == has_content:
+        raise HTTPException(status_code=422, detail="请提供 Skill ZIP 或生成草稿")
+    skill_upload = None
+    if has_file:
+        if not (file.filename or "").lower().endswith(".zip"):
+            raise HTTPException(status_code=422, detail="请上传 Skill ZIP 文件")
+        try:
+            file_bytes = await read_upload_with_limit(file, max_size_bytes=10 * 1024 * 1024, too_large_message="ZIP 文件不能超过 10 MiB")
+        except ValueError as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        skill_upload = (file.filename, file_bytes)
+    elif len(skill_content.encode("utf-8")) > 64 * 1024:
+        raise HTTPException(status_code=422, detail="Skill 草稿不能超过 64 KiB")
+    return await _create_agent_response(
+        db,
+        current_user,
+        payload,
+        skill_upload=skill_upload,
+        skill_content=skill_content if has_content else None,
+    )
 
 
 @agent_router.get("/{agent_id}")
@@ -245,6 +269,29 @@ async def get_self_skill(agent_id: str, current_user: User = Depends(get_require
         return await get_agent_bound_skill(db, agent_slug=agent_id, operator=current_user)
     except PermissionError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@agent_router.post("/self-skill/generate")
+async def generate_new_self_skill(
+    payload: NewBoundSkillGenerate,
+    current_user: User = Depends(get_required_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """新建智能体前生成专属 Skill 草稿，只返回预览。"""
+    try:
+        return await generate_new_skill_draft(
+            db,
+            operator=current_user,
+            agent_name=payload.agent_name,
+            purpose=payload.purpose,
+            triggers=payload.triggers,
+            inputs_outputs=payload.inputs_outputs,
+            tools=payload.tools,
+        )
+    except SkillDraftGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @agent_router.post("/{agent_id}/self-skill")
@@ -346,10 +393,16 @@ async def _serialize_agent(
     return data
 
 
-async def _create_agent_response(db, user, payload, *, skill_upload=None):
+async def _create_agent_response(db, user, payload, *, skill_upload=None, skill_content=None):
     """将同一创建用例的领域错误与结果映射到 HTTP。"""
     try:
-        item = await create_agent_definition(db, operator=user, skill_upload=skill_upload, **payload.model_dump())
+        item = await create_agent_definition(
+            db,
+            operator=user,
+            skill_upload=skill_upload,
+            skill_content=skill_content,
+            **payload.model_dump(),
+        )
     except AgentBackendNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PermissionError as exc:

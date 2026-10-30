@@ -2,6 +2,7 @@
 
 import asyncio
 import shutil
+import uuid
 from typing import Any
 
 from yuxi.infrastructure.observability.logging import logger
@@ -12,8 +13,9 @@ from yuxi.modules.agents.repositories.definitions import DEFAULT_SHARE_CONFIG, A
 from yuxi.modules.agents.runtime.agent_backends import get_agent_backend
 from yuxi.modules.agents.runtime.context import filter_declared_config
 from yuxi.modules.agents.services.configuration import merge_agent_config_json, prepare_agent_config_write
-from yuxi.modules.extensions.skills.access import validate_skill_dependencies
+from yuxi.modules.extensions.skills.access import get_skills_root_dir, validate_skill_dependencies
 from yuxi.modules.extensions.skills.bound import publish_bound_skill
+from yuxi.modules.extensions.skills.generation import normalize_skill_draft
 from yuxi.modules.extensions.skills.install_draft import prepared_uploaded_skill
 from yuxi.modules.extensions.skills.package import parse_skill_dir_metadata
 from yuxi.modules.extensions.skills.projection import invalidate_skill_projections, refresh_committed_skill_projections
@@ -40,8 +42,10 @@ async def set_default_agent_definition(db, *, agent: Agent, operator: User) -> A
     return result
 
 
-async def create_agent_definition(db, *, operator, skill_upload=None, **fields):
+async def create_agent_definition(db, *, operator, skill_upload=None, skill_content=None, **fields):
     """提交 Agent、Context 与可选专属包，共享资源通过独立入口创建。"""
+    if skill_upload is not None and skill_content is not None:
+        raise ValueError("不能同时提交 Skill ZIP 与生成草稿")
     backend = get_agent_backend(fields["backend_id"])
     if fields.pop("set_default", False):
         raise ValueError("默认智能体已固定为内置智能助手")
@@ -76,6 +80,21 @@ async def create_agent_definition(db, *, operator, skill_upload=None, **fields):
                     source=source,
                     source_slug=parse_skill_dir_metadata(source)["slug"],
                 )
+        elif skill_content is not None:
+            draft = normalize_skill_draft(skill_content)
+            staging = get_skills_root_dir() / f".create-{uuid.uuid4().hex}.tmp"
+            staging.mkdir()
+            try:
+                (staging / "SKILL.md").write_text(draft["content"], encoding="utf-8")
+                await publish_bound_skill(
+                    db,
+                    agent=agent,
+                    operator=operator,
+                    source=staging,
+                    source_slug=draft["slug"],
+                )
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
         else:
             await db.commit()
     except Exception:

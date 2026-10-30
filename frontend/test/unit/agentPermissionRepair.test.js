@@ -53,8 +53,8 @@ async function setupForm(detail, isAdmin = true) {
     userApi: {},
     MAX_IMAGE_UPLOAD_SIZE_BYTES: 1024, MAX_IMAGE_UPLOAD_SIZE_MB: 1
   }
-  for (const name of ['ArrowLeft', 'ArrowRight', 'Bot', 'FileArchive', 'Microscope', 'Plus', 'RefreshCw', 'Settings2', 'SlidersHorizontal', 'Upload', 'Wrench', 'X',
-    'AgentRuntimeConfigForm', 'McpFormModal', 'SkillInstallFlowModal', 'AgentBoundSkillPanel', 'ShareConfigForm', 'FallbackAvatar', 'CollapseTransition']) deps[name] = {}
+  for (const name of ['ArrowLeft', 'ArrowRight', 'Bot', 'FileArchive', 'Microscope', 'Plus', 'RefreshCw', 'Settings2', 'SlidersHorizontal', 'Sparkles', 'Upload', 'Wrench', 'X',
+    'AgentRuntimeConfigForm', 'AgentSkillDraftModal', 'McpFormModal', 'SkillInstallFlowModal', 'AgentBoundSkillPanel', 'ShareConfigForm', 'FallbackAvatar', 'CollapseTransition']) deps[name] = {}
   const component = new Function(...Object.keys(deps), executable)(...Object.values(deps))
   const form = component.setup({ backendOptions: [] }, { expose() {}, emit() {} })
   return { form, store, writes, selections, errors, navigations, routeGuards, deps }
@@ -439,7 +439,7 @@ test('专属 Skill mutation 等待时父级不关闭保存切换或打开，结�
     .replace(/^import[\s\S]*?from '[^']+'\n/gm, '').replace('export default', 'return')
   let rejectUpload
   const panelDeps = {
-    reactive, ref, onMounted() {}, MarkdownPreview: {}, Modal: {},
+    reactive, ref, onMounted() {}, MarkdownPreview: {}, Modal: {}, AgentSkillDraftModal: {},
     message: { error() {}, success() {} }, skillApi: {},
     agentApi: { uploadAgentBoundSkill: () => new Promise((_, reject) => { rejectUpload = reject }) }
   }

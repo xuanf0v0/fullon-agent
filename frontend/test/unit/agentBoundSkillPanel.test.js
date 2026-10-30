@@ -22,6 +22,7 @@ test('专属 Skill 加载失败可重试，首次导入不传修订且冲突保�
     reactive,
     ref,
     MarkdownPreview: {},
+    AgentSkillDraftModal: {},
     skillApi: {
       getSkillFile: async (slug, path) => {
         assert.deepEqual([slug, path], ['bound', 'SKILL.md'])

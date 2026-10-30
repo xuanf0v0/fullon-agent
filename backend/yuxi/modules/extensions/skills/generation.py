@@ -53,23 +53,68 @@ async def generate_bound_skill_draft(
     tools: list[str] | None = None,
 ) -> dict[str, str]:
     """为可管理的 Agent 生成专属 Skill 草稿，返回未保存的 Markdown。"""
-    purpose = (purpose or "").strip()
-    if not purpose:
-        raise ValueError("请填写 Skill 用途")
-
+    purpose = _normalize_purpose(purpose)
     agent = await AgentRepository(db).get_visible_by_slug(slug=agent_slug, user=operator, for_run=False)
     if agent is None or not user_can_manage_agent(operator, agent):
         raise PermissionError("智能体不存在或无权限管理")
     if await SkillRepository(db).get_by_bound_agent_id(agent.id) is not None:
         raise SkillEditConflict("已存在专属 Skill，请直接编辑；如需重写请先删除")
+    return await _generate_draft(
+        db,
+        operator=operator,
+        agent_name=agent.name,
+        purpose=purpose,
+        triggers=triggers,
+        inputs_outputs=inputs_outputs,
+        tools=tools,
+    )
 
+
+async def generate_new_skill_draft(
+    db: AsyncSession,
+    *,
+    operator: User,
+    agent_name: str,
+    purpose: str,
+    triggers: str | None = None,
+    inputs_outputs: str | None = None,
+    tools: list[str] | None = None,
+) -> dict[str, str]:
+    """为尚未创建的 Agent 生成草稿；调用方负责在创建成功后保存。"""
+    agent_name = (agent_name or "").strip()
+    if not agent_name:
+        raise ValueError("请先填写智能体名称")
+    if len(agent_name) > 100:
+        raise ValueError("智能体名称过长")
+    return await _generate_draft(
+        db,
+        operator=operator,
+        agent_name=agent_name,
+        purpose=_normalize_purpose(purpose),
+        triggers=triggers,
+        inputs_outputs=inputs_outputs,
+        tools=tools,
+    )
+
+
+async def _generate_draft(
+    db: AsyncSession,
+    *,
+    operator: User,
+    agent_name: str,
+    purpose: str,
+    triggers: str | None,
+    inputs_outputs: str | None,
+    tools: list[str] | None,
+) -> dict[str, str]:
+    """一次有界模型调用；调用方已完成权限与绑定检查。"""
     options = await system_options.get(db)
     model_spec = (options or {}).get("fast_model")
     if not model_spec:
         raise SkillDraftGenerationError("未配置快速模型，无法生成 Skill 草稿")
 
     payload = {
-        "agent_name": agent.name,
+        "agent_name": agent_name,
         "purpose": purpose,
         "triggers": (triggers or "").strip() or None,
         "inputs_outputs": (inputs_outputs or "").strip() or None,
@@ -87,14 +132,22 @@ async def generate_bound_skill_draft(
     except TimeoutError as exc:
         raise SkillDraftGenerationError("Skill 草稿生成超时，请重试") from exc
     except Exception as exc:
-        logger.warning(f"专属 Skill 草稿生成失败: agent={agent_slug} error_type={type(exc).__name__}")
+        logger.warning(f"Skill 草稿生成失败: agent={agent_name} error_type={type(exc).__name__}")
         raise SkillDraftGenerationError("Skill 草稿生成失败，请检查快速模型配置后重试") from exc
 
     try:
         return normalize_skill_draft(response.text)
     except (ValueError, TypeError) as exc:
-        logger.warning(f"专属 Skill 草稿格式非法: agent={agent_slug} error={exc}")
+        logger.warning(f"Skill 草稿格式非法: agent={agent_name} error={exc}")
         raise SkillDraftGenerationError(f"生成结果格式不合法：{exc}") from exc
+
+
+def _normalize_purpose(purpose: str) -> str:
+    """用途必填，避免把空表单发给模型。"""
+    normalized = (purpose or "").strip()
+    if not normalized:
+        raise ValueError("请填写 Skill 用途")
+    return normalized
 
 
 def normalize_skill_draft(content: str) -> dict[str, str]:

@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -1037,3 +1038,44 @@ async def test_bound_skill_rejects_invalid_draft_before_binding(test_client, adm
     finally:
         deleted = await test_client.delete(f"/api/agent/{agent_slug}", headers=admin_headers)
         assert deleted.status_code in {200, 404}, deleted.text
+
+
+async def test_create_agent_with_draft_content_and_rollback(test_client, admin_headers):
+    """草稿随 Agent 创建同事务保存；非法草稿回滚整笔创建。"""
+    slug = f"pytest_create_ai_{uuid.uuid4().hex[:10]}"
+    content = (
+        "---\nslug: daily-brief\nname: 每日简报\ndescription: 用户要求生成每日简报时使用\n---\n\n"
+        "# 步骤\n\n1. 收集数据。\n"
+    )
+    response = await test_client.post(
+        "/api/agent/with-skill",
+        headers=admin_headers,
+        data={
+            "agent": json.dumps({"name": "草稿创建", "slug": slug, "backend_id": "ChatbotAgent"}),
+            "skill_content": content,
+        },
+    )
+    assert response.status_code == 200, response.text
+    agent_id = response.json()["agent"]["agent_id"]
+    try:
+        bound = await test_client.get(f"/api/agent/{agent_id}/self-skill", headers=admin_headers)
+        assert bound.status_code == 200, bound.text
+        skill_slug = bound.json()["skill"]["slug"]
+        saved = await test_client.get(f"/api/system/skills/{skill_slug}/file?path=SKILL.md", headers=admin_headers)
+        assert saved.status_code == 200, saved.text
+        assert "用户要求生成每日简报时使用" in saved.json()["data"]["content"]
+        assert f"slug: {skill_slug}" in saved.json()["data"]["content"]
+    finally:
+        assert (await test_client.delete(f"/api/agent/{agent_id}", headers=admin_headers)).status_code == 200
+
+    bad_slug = f"pytest_create_bad_{uuid.uuid4().hex[:10]}"
+    bad = await test_client.post(
+        "/api/agent/with-skill",
+        headers=admin_headers,
+        data={
+            "agent": json.dumps({"name": "坏草稿", "slug": bad_slug, "backend_id": "ChatbotAgent"}),
+            "skill_content": "# 没有 frontmatter",
+        },
+    )
+    assert bad.status_code == 422, bad.text
+    assert (await test_client.get(f"/api/agent/{bad_slug}", headers=admin_headers)).status_code == 404

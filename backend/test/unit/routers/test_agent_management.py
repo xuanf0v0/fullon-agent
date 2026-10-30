@@ -158,6 +158,20 @@ def test_self_skill_generate_maps_generation_error(monkeypatch):
     assert "模型不可用" in response.json()["detail"]
 
 
+def test_new_self_skill_generate_maps_errors(monkeypatch):
+    async def fake_generate(*args, **kwargs):
+        raise agent_router_module.SkillDraftGenerationError("模型未配置")
+
+    monkeypatch.setattr(agent_router_module, "generate_new_skill_draft", fake_generate)
+    client = _build_app(monkeypatch, _ListRepo)
+
+    response = client.post("/api/agent/self-skill/generate", json={"agent_name": "周报", "purpose": "汇总"})
+
+    assert response.status_code == 502
+    assert "模型未配置" in response.json()["detail"]
+    assert client.post("/api/agent/self-skill/generate", json={"purpose": "汇总"}).status_code == 422
+
+
 def test_self_skill_create_passes_generated_content(monkeypatch):
     captured = {}
 

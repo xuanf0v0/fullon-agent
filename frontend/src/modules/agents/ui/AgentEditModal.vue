@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Settings2,
   SlidersHorizontal,
+  Sparkles,
   Upload,
   Wrench,
   X
@@ -24,6 +25,7 @@ import { isAllAgentResourceSelection, normalizeAgentConfigurableItems } from '@/
 import McpFormModal from '@/modules/extensions/ui/McpFormModal.vue'
 import SkillInstallFlowModal from '@/modules/extensions/ui/SkillInstallFlowModal.vue'
 import AgentBoundSkillPanel from '@/modules/agents/ui/AgentBoundSkillPanel.vue'
+import AgentSkillDraftModal from '@/modules/agents/ui/AgentSkillDraftModal.vue'
 import AgentRuntimeConfigForm from '@/modules/agents/ui/AgentRuntimeConfigForm.vue'
 import ShareConfigForm from '@/modules/agents/ui/ShareConfigForm.vue'
 import { cloneShareConfig } from '@/modules/agents/model/shareConfig'
@@ -54,6 +56,8 @@ const agentIconUploading = ref(false)
 const saving = ref(false)
 const boundSkillSaving = ref(false)
 const createSkillFile = ref(null)
+const createSkillDraft = ref(null)
+const createSkillDraftOpen = ref(false)
 const createContext = ref({})
 const createConfigItems = ref({})
 const createConfigLoading = ref(false)
@@ -304,6 +308,8 @@ const openCreate = () => {
   agentModalActiveTab.value = 'basic'
   resetAgentForm()
   createSkillFile.value = null
+  createSkillDraft.value = null
+  createSkillDraftOpen.value = false
   createContext.value = {}
   createConfigItems.value = {}
   createConfigError.value = ''
@@ -421,8 +427,14 @@ const beforeCreateSkillUpload = (file) => {
     message.error('ZIP 文件不能超过 10 MiB')
   } else {
     createSkillFile.value = file
+    createSkillDraft.value = null
   }
   return false
+}
+
+const handleUseCreateSkillDraft = (draft) => {
+  createSkillDraft.value = draft
+  createSkillFile.value = null
 }
 
 const openEdit = async (agent) => {
@@ -591,7 +603,11 @@ const saveAgent = async () => {
       message.success('智能体已保存')
     } else {
       creatingRequest = true
-      const created = await agentStore.createAgent(payload, createSkillFile.value)
+      const created = await agentStore.createAgent(
+        payload,
+        createSkillFile.value,
+        createSkillDraft.value?.content
+      )
       emit('saved', { mode: 'create', agent: created })
       message.success('智能体已创建')
     }
@@ -853,13 +869,18 @@ defineExpose({
             <div class="create-resource-row">
               <div class="form-label">
                 <span>专属 Skill <small>可选</small></span>
-                <span class="create-resource-hint">导入操作指南、脚本与参考资料，创建后可继续编辑。<template v-if="!createSkillFile">单 Skill ZIP，最多 10 MiB</template></span>
+                <span class="create-resource-hint">让 AI 生成操作指南，或导入单 Skill ZIP；创建后可继续编辑。</span>
                 <div v-if="createSkillFile" class="create-skill-selection">
                   <span class="create-skill-filename" :title="createSkillFile.name">{{ createSkillFile.name }}</span>
                   <a-button type="text" size="small" :disabled="saving" @click="createSkillFile = null">移除</a-button>
                 </div>
+                <div v-else-if="createSkillDraft" class="create-skill-selection">
+                  <span class="create-skill-filename" :title="createSkillDraft.name">{{ createSkillDraft.name }} · AI 草稿</span>
+                  <a-button type="text" size="small" :disabled="saving" @click="createSkillDraft = null">移除</a-button>
+                </div>
               </div>
               <div class="create-skill-upload">
+                <a-button class="lucide-icon-btn" :disabled="saving" @click="createSkillDraftOpen = true"><Sparkles :size="14" aria-hidden="true" />AI 生成</a-button>
                 <a-upload :show-upload-list="false" :before-upload="beforeCreateSkillUpload" :disabled="saving" accept=".zip">
                   <a-button class="lucide-icon-btn" :disabled="saving"><FileArchive :size="14" aria-hidden="true" />{{ createSkillFile ? '更换 ZIP' : '选择 ZIP' }}</a-button>
                 </a-upload>
@@ -917,6 +938,12 @@ defineExpose({
       </div>
     </footer>
   </a-modal>
+  <AgentSkillDraftModal
+    v-model:open="createSkillDraftOpen"
+    mode="new"
+    :agent-name="agentForm.name"
+    @use-draft="handleUseCreateSkillDraft"
+  />
   <McpFormModal v-model:open="mcpCreateOpen" @submitted="handleMcpCreated" />
   <SkillInstallFlowModal :open="sharedSkillOpen" :flow="sharedSkillFlow" target="shared" @close="sharedSkillOpen = false" @completed="handleSharedSkillCreated" />
 </template>

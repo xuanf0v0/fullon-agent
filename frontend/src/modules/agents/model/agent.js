@@ -229,8 +229,8 @@ export const useAgentStore = defineStore(
       }
     }
 
-    async function createAgent(payload, skillFile = null) {
-      const response = await agentApi.createAgent(payload, skillFile)
+    async function createAgent(payload, skillFile = null, skillContent = null) {
+      const response = await agentApi.createAgent(payload, skillFile, skillContent)
       const created = response.agent
       if (created?.agent_id) {
         agentDetails.value[created.agent_id] = created

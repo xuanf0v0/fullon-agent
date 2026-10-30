@@ -98,6 +98,27 @@ async def test_generate_rejects_unmanaged_or_bound_agent(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_generate_new_skill_requires_name_and_skips_agent_lookup(monkeypatch):
+    _patch_generation(monkeypatch)
+    monkeypatch.setattr(
+        service.AgentRepository,
+        "get_visible_by_slug",
+        AsyncMock(side_effect=AssertionError("新建草稿不应查询已存在的 Agent")),
+    )
+
+    with pytest.raises(ValueError, match="智能体名称"):
+        await service.generate_new_skill_draft(None, operator=SimpleNamespace(uid="user"), agent_name="  ", purpose="周报")
+
+    draft = await service.generate_new_skill_draft(
+        None,
+        operator=SimpleNamespace(uid="user"),
+        agent_name="周报智能体",
+        purpose="每周汇总销售数据",
+    )
+    assert draft["slug"] == "weekly-report"
+
+
+@pytest.mark.asyncio
 async def test_generate_wraps_model_failure_and_invalid_output(monkeypatch):
     _patch_generation(monkeypatch, text=VALID)
 
