@@ -1,12 +1,16 @@
 """聊天模型加载、供应商协议适配与通用调用入口。"""
 
+import asyncio
 import base64
 import hashlib
 import hmac
+import json
 import os
 import time
+import weakref
 from uuid import uuid4
 
+import httpx
 from langchain.chat_models import BaseChatModel
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, AIMessageChunk, convert_to_messages
@@ -22,6 +26,114 @@ from yuxi.modules.models.utils import get_docker_safe_url
 USER_UID_HEADER = "x-yuxi-uid"
 USER_UID_TIMESTAMP_HEADER = "x-yuxi-uid-ts"
 USER_UID_SIGNATURE_HEADER = "x-yuxi-uid-sig"
+
+_SSE_DATA_PREFIX = b"data:"
+_repair_clients: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+def _is_complete_json(payload: bytes) -> bool:
+    """判断事件初始 data 行是否已经是一段完整 JSON。"""
+    try:
+        json.loads(payload)
+    except ValueError:
+        return False
+    return True
+
+
+class _SseBoundaryRepairStream(httpx.AsyncByteStream):
+    """把缺少空行分隔的相邻 data: 行拆成独立 SSE 事件。
+
+    部分 OpenAI 兼容端点会把两个 JSON 直接写成相邻的 data: 行；按 SSE 规范它们
+    属于同一事件，OpenAI SDK 会以一个 json.loads 解析并报 Extra data。只在上一条
+    data 行是本事件首行且已是完整 JSON 时拆分，保留合法的多行事件。
+    """
+
+    def __init__(self, stream: httpx.AsyncByteStream):
+        self._stream = stream
+
+    @staticmethod
+    def _repair_line(line: bytes, state: tuple[bool, bytes, bool]):
+        """处理一行 SSE，并返回拆分结果与新的解析状态。"""
+        event_has_data, previous_data, previous_starts_event = state
+        split = (
+            line.startswith(_SSE_DATA_PREFIX)
+            and event_has_data
+            and previous_starts_event
+            and previous_data.endswith(b"}")
+            and _is_complete_json(previous_data)
+        )
+        prefix = b""
+        if split:
+            prefix = b"\n"
+            event_has_data = False
+            previous_data = b""
+            previous_starts_event = False
+
+        if line.startswith(_SSE_DATA_PREFIX):
+            previous_starts_event = not event_has_data
+            event_has_data = True
+            previous_data = line[len(_SSE_DATA_PREFIX) :].strip()
+        elif not line.strip():
+            event_has_data = False
+            previous_starts_event = False
+            previous_data = b""
+
+        return prefix + line, (event_has_data, previous_data, previous_starts_event)
+
+    async def __aiter__(self):
+        state: tuple[bool, bytes, bool] = (False, b"", False)
+        pending = b""
+        async for chunk in self._stream:
+            pending += chunk
+            while b"\n" in pending:
+                line, pending = pending.split(b"\n", 1)
+                repaired, state = self._repair_line(line, state)
+                yield repaired + b"\n"
+        if pending:
+            repaired, _ = self._repair_line(pending, state)
+            yield repaired
+
+    async def aclose(self) -> None:
+        await self._stream.aclose()
+
+
+class _SseRepairTransport(httpx.AsyncBaseTransport):
+    """仅对事件流响应应用 SSE 边界修复。"""
+
+    def __init__(self, transport: httpx.AsyncBaseTransport | None = None):
+        self._transport = transport or httpx.AsyncHTTPTransport(
+            limits=httpx.Limits(max_connections=1000, max_keepalive_connections=100)
+        )
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        response = await self._transport.handle_async_request(request)
+        if "text/event-stream" in response.headers.get("content-type", ""):
+            response.stream = _SseBoundaryRepairStream(response.stream)
+        return response
+
+    async def aclose(self) -> None:
+        await self._transport.aclose()
+
+
+def _get_repair_async_client() -> httpx.AsyncClient:
+    """按事件循环复用修复客户端，避免每次加载模型新建连接池。"""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    client = _repair_clients.get(loop) if loop is not None else None
+    if client is not None and not client.is_closed:
+        return client
+
+    client = httpx.AsyncClient(
+        transport=_SseRepairTransport(),
+        timeout=httpx.Timeout(600.0, connect=5.0),
+        follow_redirects=True,
+        headers={"Accept-Encoding": "identity"},
+    )
+    if loop is not None:
+        _repair_clients[loop] = client
+    return client
 
 
 def load_chat_model(
@@ -74,6 +186,9 @@ def load_chat_model(
             google_api_key=SecretStr(api_key),
             **kwargs,
         )
+
+    if kwargs.get("http_async_client") is None:
+        kwargs["http_async_client"] = _get_repair_async_client()
 
     return ChatCompletionsAdapter(
         model=info.model_id,
