@@ -462,7 +462,7 @@ async def fetch_remote_models(provider: ModelProvider) -> list[dict[str, Any]]:
 
     capabilities = set(provider.capabilities or [])
     endpoint_specs = [
-        (provider.models_endpoint, "chat"),
+        (provider.models_endpoint or "/models", "chat"),
     ]
     if "embedding" in capabilities:
         endpoint_specs.append((provider.embedding_models_endpoint, "embedding"))

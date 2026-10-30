@@ -561,3 +561,28 @@ def test_normalize_payload_allows_model_type_within_capabilities():
     sources = [model["source"] for model in payload["enabled_models"]]
     assert types == ["chat", "embedding"]
     assert sources == ["manual", "manual"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_remote_models_defaults_chat_endpoint_to_models(monkeypatch):
+    """未配置 models_endpoint 时按 Base URL + /models 自动拼接。"""
+    calls = []
+
+    async def fake_fetch(client, provider, headers, endpoint, model_type):
+        calls.append((endpoint, model_type))
+        return []
+
+    monkeypatch.setattr("yuxi.modules.models.providers.service._fetch_models_from_endpoint", fake_fetch)
+
+    class Provider:
+        base_url = "https://example.com/v1"
+        api_key = None
+        api_key_env = None
+        headers_json = {}
+        capabilities = ["chat"]
+        models_endpoint = None
+        embedding_models_endpoint = None
+        rerank_models_endpoint = None
+
+    assert await fetch_remote_models(Provider()) == []
+    assert calls == [("/models", "chat")]
