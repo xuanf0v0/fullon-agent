@@ -55,7 +55,7 @@ async def discovery():
     """系统能力发现接口（公开接口）"""
     enabled = knowledge_enabled()
     return {
-        "name": "Yuxi",
+        "name": "fullon",
         "version": get_version(),
         "api_prefix": "/api",
         "capabilities": {

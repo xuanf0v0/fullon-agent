@@ -21,7 +21,7 @@ from yuxi.shared.datetime import utc_now
 
 CLI_AUTH_SESSION_TTL_SECONDS = 10 * 60
 CLI_AUTH_POLL_INTERVAL_SECONDS = 2
-CLI_AUTH_DEFAULT_KEY_NAME = "Yuxi CLI"
+CLI_AUTH_DEFAULT_KEY_NAME = "fullon CLI"
 CLI_AUTH_USER_CODE_ALPHABET = "".join(ch for ch in string.ascii_uppercase + string.digits if ch not in "0O1I")
 
 CLI_AUTH_STATUS_PENDING = "pending"

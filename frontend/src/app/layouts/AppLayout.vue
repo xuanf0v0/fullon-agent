@@ -139,7 +139,7 @@ const sessionRouteCache = createSessionRouteCache(router)
 onUnmounted(sessionRouteCache.dispose)
 
 const activeJobCount = computed(() => activeCountRef.value || 0)
-const productName = computed(() => infoStore.branding.name || 'Yuxi')
+const productName = computed(() => infoStore.branding.name || 'fullon')
 
 // 下面是导航菜单部分，添加智能体项
 const mainList = computed(() => {
@@ -476,7 +476,6 @@ div.header,
 
   .sidebar-brand,
   :deep(.session-nav-section:not(.sidebar-sessions)),
-  .github,
   .user-info {
     flex-shrink: 0;
   }

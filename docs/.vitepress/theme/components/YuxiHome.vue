@@ -2,7 +2,6 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { withBase } from 'vitepress'
 
-const GITHUB = 'https://github.com/xerrors/Yuxi'
 const DEMO = 'https://www.bilibili.com/video/BV1erE26iEgv/'
 const OSS_ASSET_BASE = 'https://xerrors.oss-cn-shanghai.aliyuncs.com/github/yuxi/docs/home'
 const MASCOT_IMAGE = `${OSS_ASSET_BASE}/yuxi-mascot-cutout.png`
@@ -511,7 +510,6 @@ onBeforeUnmount(() => {
           <p>把团队知识、工具与多智能体执行接进一个可私有部署的工作台。</p>
           <div class="yx-actions">
             <a class="yx-button yx-button--primary" :href="withBase('/intro/quick-start')">开始部署</a>
-            <a class="yx-button yx-button--secondary" :href="GITHUB" target="_blank" rel="noreferrer">查看 GitHub</a>
           </div>
         </div>
 
@@ -729,22 +727,19 @@ docker compose --profile container up --build -d</code></pre>
             <p>感谢每一位参与代码、文档、测试和讨论的贡献者。</p>
           </header>
 
-          <a
+          <div
             v-reveal
             class="yx-contributors"
-            :href="`${GITHUB}/graphs/contributors`"
-            target="_blank"
-            rel="noreferrer"
           >
             <img
               src="https://contrib.rocks/image?repo=xerrors/Yuxi&max=60&columns=12"
-              alt="Yuxi 贡献者头像墙"
+              alt="贡献者头像墙"
               width="812"
               height="268"
               loading="lazy"
               decoding="async"
             >
-          </a>
+          </div>
 
           <div v-reveal class="yx-community__footer">
             <div>
@@ -1583,17 +1578,6 @@ docker compose --profile container up --build -d</code></pre>
   border: 1px solid var(--yx-line);
   border-radius: var(--yx-radius);
   background: var(--yx-paper);
-  transition: border-color .2s ease, transform .2s ease;
-}
-
-.yx-contributors:hover {
-  transform: translateY(-3px);
-  border-color: var(--yx-amber-strong);
-}
-
-.yx-contributors:focus-visible {
-  outline: 3px solid var(--yx-focus);
-  outline-offset: 4px;
 }
 
 .yx-contributors img {
