@@ -48,7 +48,7 @@ async (page) => {
     else if (path === '/api/projects') json = []
     else if (path.includes('/databases')) json = { databases: [] }
     else if (path.includes('/models')) json = { providers: [], models: [], data: [] }
-    else { unknown.add(path); json = { data: [], files: [], skills: [], projects: [], providers: [], config: {}, site_name: '语析', first_run: false } }
+    else { unknown.add(path); json = { data: [], files: [], skills: [], projects: [], providers: [], config: {}, site_name: 'fullon ai', first_run: false } }
     await route.fulfill({ json })
   })
   await page.setViewportSize({ width: 1440, height: 900 })

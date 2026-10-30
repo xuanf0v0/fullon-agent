@@ -89,7 +89,7 @@ async function attachmentDraftOwnership(page) {
           projects: [],
           providers: [],
           config: {},
-          site_name: '语析',
+          site_name: 'fullon ai',
           first_run: false
         }
       await route.fulfill({ json })

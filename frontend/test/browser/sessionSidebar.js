@@ -22,7 +22,7 @@ async page => {
     const path = url.split('?')[0].replace(origin, '')
     if (route.request().method() === 'POST' && /\/agents\/sessions(?:\/[^/]+\/events)?$/.test(path)) sessionCreates++
     let json = { data: [], files: [], skills: [], projects: [], providers: [], config: {} }
-    if (path.endsWith('/system/info')) json = { success: true, data: { branding: { name: '语析', logo: '/favicon.svg' } } }
+    if (path.endsWith('/system/info')) json = { success: true, data: { branding: { name: 'fullon ai', logo: '/favicon.svg' } } }
     if (path.endsWith('/system/health')) json = { status: 'ok' }
     if (path.endsWith('/check-first-run')) json = { first_run: false }
     if (path.endsWith('/auth/me')) json = { id: userId, uid: `sidebar-fixture-${userId}`, username: `侧栏验收${userId}`, role: 'superadmin' }

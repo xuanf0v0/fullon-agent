@@ -34,7 +34,7 @@ Yuxi 是面向需要企业自部署的多用户 Agent 产品，且需要自己�
 
 ## 快速启动
 
-语析（Yuxi）默认使用 Docker Compose 和 Container 沙盒启动。每段智能体执行使用独立临时容器，工作目录文件持久保留，无需额外准备 KVM 节点。
+fullon ai 默认使用 Docker Compose 和 Container 沙盒启动。每段智能体执行使用独立临时容器，工作目录文件持久保留，无需额外准备 KVM 节点。
 
 ### 前置条件
 

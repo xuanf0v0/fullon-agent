@@ -34,7 +34,7 @@ async (page) => {
     else if (path.includes('ocr')) json = { engines: [{ engine_id: 'rapid_ocr' }], default_engine: 'rapid_ocr' }
     else if (path.includes('/models')) json = { providers: [], models: [], data: [] }
     else if (path === '/api/projects') json = []
-    else json = { data: [], files: [], skills: [], config: {}, site_name: '语析', first_run: false }
+    else json = { data: [], files: [], skills: [], config: {}, site_name: 'fullon ai', first_run: false }
     await route.fulfill({ json })
   }
   await page.route('**/api/**', handler)

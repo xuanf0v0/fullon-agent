@@ -14,7 +14,7 @@ Owner：backend/yuxi/modules/system/static/info.template.yaml
 
 品牌模板仅保留 branding 与 footer。branding 统一拥有 name、logo，以及仍有当前消费者的 title、login_bg。HomeView、LoginView、AppLayout 从同一 Info Store 的 branding 读取产品名称和 Logo；首页移除副标题投影，登录页移除组织名拼接，侧栏以 Logo 替代独立头像。
 
-Info Store 拥有前端品牌投影；模板与现有 /api/system/info 加载器继续拥有服务端配置读取与版本替换。无配置兼容层或数据迁移逻辑；自定义 YAML 需按新的单一品牌结构调整。当前工作区不存在 info.local.yaml，运行时使用仓库模板。首页与登录页品牌文字沿用原登录页“语析”的字号、字重与中性灰色（gray-700）。首页的输入及按钮样式由[首页单屏输入入口与知识流线](2026-10-16-home-entry-screen.md)拥有。
+Info Store 拥有前端品牌投影；模板与现有 /api/system/info 加载器继续拥有服务端配置读取与版本替换。无配置兼容层或数据迁移逻辑；自定义 YAML 需按新的单一品牌结构调整。当前工作区不存在 info.local.yaml，运行时使用仓库模板。首页与登录页品牌文字沿用原登录页的字号、字重与中性灰色（gray-700）。首页的输入及按钮样式由[首页单屏输入入口与知识流线](2026-10-16-home-entry-screen.md)拥有。
 
 ## 替代方案
 

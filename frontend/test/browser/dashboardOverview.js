@@ -53,7 +53,7 @@ async page => {
     if (path.endsWith('/api/agent')) json = { agents: [] }
     if (path.endsWith('/system/agent-feedback')) json = { items: [], has_more: false, last_id: null }
     if (path.endsWith('/api/v1/agents/sessions')) json = { data: [], has_more: false }
-    if (path.endsWith('/system/info')) json = { success: true, data: { branding: { name: '语析', logo: '/favicon.svg' } } }
+    if (path.endsWith('/system/info')) json = { success: true, data: { branding: { name: 'fullon ai', logo: '/favicon.svg' } } }
     if (path.includes('/dashboard/sessions')) auditRequests.push(path)
     if (path.endsWith('/auth/me')) json = { id: 1, uid: 'dashboard-fixture', username: '布局测试', role: 'superadmin' }
     if (path.endsWith('/check-first-run')) json = { first_run: false }

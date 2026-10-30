@@ -5,8 +5,8 @@ async page => {
   const check = (condition, message) => { if (!condition) throw new Error(message) }
   const origin = page.url().split('/').slice(0, 3).join('/')
   const branding = {
-    branding: { name: '语析', logo: '/favicon.svg', title: '让知识，成为行动。', login_bg: '/login-bg.jpg' },
-    footer: { copyright: '语析 · 首页测试' }
+    branding: { name: 'fullon ai', logo: '/favicon.svg', title: '让知识，成为行动。', login_bg: '/login-bg.jpg' },
+    footer: { copyright: 'fullon ai · 首页测试' }
   }
   let failHealth = false
   let holdHealth = true

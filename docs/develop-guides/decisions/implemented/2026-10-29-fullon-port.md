@@ -8,7 +8,7 @@ Owner：backend/yuxi/modules/schedules/service.py
 
 ## 问题
 
-fork（`deepseek-harness-master`）中的自建能力需要落到 Yuxi。核对后多数能力（技能、MCP、技能广场、Agent 创作、cron 定时任务、知识库 RAG）Yuxi 已有且更完整；真实缺口是品牌仍为「语析/Yuxi」、定时任务没有一次性绝对时间模式、聊天无法把知识库文件文本直接注入本轮消息。
+fork（`deepseek-harness-master`）中的自建能力需要落到 Yuxi。核对后多数能力（技能、MCP、技能广场、Agent 创作、cron 定时任务、知识库 RAG）Yuxi 已有且更完整；真实缺口是品牌仍为上游默认的 Yuxi、定时任务没有一次性绝对时间模式、聊天无法把知识库文件文本直接注入本轮消息。
 
 ## 决策
 
@@ -36,7 +36,7 @@ fork（`deepseek-harness-master`）中的自建能力需要落到 Yuxi。核对�
 
 | 验收主张 | 失败面 | 语义 Owner | 直接证据 / 命令 | 负向案例 | 当前结果 |
 |---|---|---|---|---|---|
-| 默认真实模板中的品牌为 fullon + PNG 图标 | 页面仍显示语析/Yuxi | `backend/yuxi/modules/system/static/info.template.yaml` | `pytest test/unit/routers/test_system_router.py`（读取真实模板断言 name/logo/copyright） | discovery 或 footer 残留旧名 | Passed |
+| 默认真实模板中的品牌为 fullon + PNG 图标 | 页面仍显示上游默认品牌 Yuxi | `backend/yuxi/modules/system/static/info.template.yaml` | `pytest test/unit/routers/test_system_router.py`（读取真实模板断言 name/logo/copyright） | discovery 或 footer 残留旧名 | Passed |
 | 一次性任务创建、校验、领取后停用、重复运行顺延 | 重复触发/不触发/丢失 | `backend/yuxi/modules/schedules/service.py` | `pytest test/unit/services/test_scheduled_agent_service.py test/unit/routers/test_scheduled_agent_router.py`（33 passed） | 过去时间、无时区、形状混用、进行中的运行 | Passed |
 | 一次性任务到点新建会话并发送首条消息 | 触发被误取消 | `backend/yuxi/modules/schedules/service.py` | `_dispatch_cancelled` 单测覆盖删除/停用/once 组合；真实 worker+API 链路 `Not run`（未启动完整栈） | 停用的 cron 触发被投递、领取后的 once 被取消 | Not run |
 | 一次性任务数据库形状与约束 | 混用形状写入/旧行迁移失败 | `backend/yuxi/migrations/one_shot_schedules.py` | 真实 PostgreSQL：集成测试 `test_once_job_claim_disables_after_first_run_and_rejects_cron_shape`；迁移 smoke：全新基线 v2 → 模拟 v1 → `--apply` 两次 → v2 且约束恢复 | once + cron_expression 同时写入被 CHECK 拒绝 | Passed |
