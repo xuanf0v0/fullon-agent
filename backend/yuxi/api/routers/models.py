@@ -81,6 +81,7 @@ async def create_provider(
     except HTTPException:
         raise
     except ValueError as e:
+        logger.warning(f"创建模型供应商参数无效: {e}")
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"创建模型供应商失败: {e}")
@@ -199,6 +200,7 @@ async def update_provider(
     except HTTPException:
         raise
     except ValueError as e:
+        logger.warning(f"更新模型供应商参数无效 {provider_id}: {e}")
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"更新模型供应商失败 {provider_id}: {e}")

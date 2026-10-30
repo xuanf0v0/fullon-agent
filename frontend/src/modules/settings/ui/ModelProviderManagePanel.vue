@@ -22,6 +22,7 @@ import {
 import { modelProviderApi } from '@/apis/system_api'
 import { useConfigStore } from '@/modules/settings/model/config'
 import { modelAvatars } from '@/modules/settings/model/modelIcon'
+import { validateProviderForm } from '@/modules/settings/model/providerValidation'
 import {
   formatModelPriceDisplay,
   loadModelMetadataCatalog,
@@ -402,6 +403,14 @@ const buildProviderPayload = () => ({
 })
 
 const createProvider = async () => {
+  const invalid = validateProviderForm(providerForm, {
+    creating: true,
+    existingIds: providers.value.map((provider) => provider.provider_id)
+  })
+  if (invalid) {
+    message.warning(invalid)
+    return
+  }
   saving.value = true
   try {
     await modelProviderApi.createProvider(buildProviderPayload())
@@ -416,6 +425,11 @@ const createProvider = async () => {
 }
 
 const saveProvider = async () => {
+  const invalid = validateProviderForm(providerForm, { creating: false })
+  if (invalid) {
+    message.warning(invalid)
+    return
+  }
   if (
     editingProviderId.value &&
     providerContainsDefaultModel(providerForm.provider_id) &&
@@ -1023,13 +1037,6 @@ defineExpose({
               autocorrect="off"
               spellcheck="false"
             />
-          </label>
-        </div>
-
-        <div class="form-row">
-          <label class="form-label">
-            <span>Models Endpoint</span>
-            <a-input v-model:value="providerForm.models_endpoint" placeholder="/models" />
           </label>
         </div>
 
