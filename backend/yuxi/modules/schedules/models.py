@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 
 from yuxi.infrastructure.postgres.base import BusinessBase as Base
@@ -39,6 +40,15 @@ class ScheduledAgentJob(Base):
             "tool_approval_mode IN ('default', 'always_trust')",
             name="ck_scheduled_agent_jobs_tool_approval_mode",
         ),
+        CheckConstraint(
+            "schedule_kind IN ('cron', 'once')",
+            name="ck_scheduled_agent_jobs_schedule_kind",
+        ),
+        CheckConstraint(
+            "(schedule_kind = 'cron' AND cron_expression IS NOT NULL AND run_at IS NULL) "
+            "OR (schedule_kind = 'once' AND run_at IS NOT NULL AND cron_expression IS NULL)",
+            name="ck_scheduled_agent_jobs_schedule_shape",
+        ),
     )
 
     id = Column(String(64), primary_key=True)
@@ -51,7 +61,9 @@ class ScheduledAgentJob(Base):
     prompt = Column(Text, nullable=False)
     tool_approval_mode = Column(String(32), nullable=False, default="default")
     model_spec = Column(String(512), nullable=True)
-    cron_expression = Column(String(100), nullable=False)
+    schedule_kind = Column(String(16), nullable=False, default="cron", server_default=text("'cron'"))
+    cron_expression = Column(String(100), nullable=True)
+    run_at = Column(DateTime(timezone=True), nullable=True)
     timezone = Column(String(64), nullable=False)
     enabled = Column(Boolean, nullable=False, default=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
@@ -69,7 +81,9 @@ class ScheduledAgentJob(Base):
             "prompt": self.prompt,
             "tool_approval_mode": self.tool_approval_mode,
             "model_spec": self.model_spec,
+            "schedule_kind": self.schedule_kind,
             "cron_expression": self.cron_expression,
+            "run_at": format_utc_datetime(self.run_at),
             "timezone": self.timezone,
             "enabled": bool(self.enabled),
             "deleted_at": format_utc_datetime(self.deleted_at),

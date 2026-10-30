@@ -104,3 +104,72 @@ def test_update_rejects_explicit_null_enabled(monkeypatch):
     response = _client().patch("/api/scheduled-tasks/job-1", json={"enabled": None})
 
     assert response.status_code == 422
+
+
+def test_one_shot_schedule_requires_run_at_and_rejects_cron(monkeypatch):
+    async def fake_create_scheduled_job(*, data, **_kwargs):
+        return data
+
+    monkeypatch.setattr(router_module, "create_scheduled_job", fake_create_scheduled_job)
+    base = {
+        "request_id": "create-request-once",
+        "name": "One shot",
+        "project_id": "project-1",
+        "agent_slug": "chatbot",
+        "prompt": "hello",
+        "timezone": "UTC",
+    }
+    client = _client()
+
+    accepted = client.post(
+        "/api/scheduled-tasks",
+        json={**base, "schedule_kind": "once", "run_at": "2026-10-30T09:00:00Z"},
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["run_at"] == "2026-10-30T09:00:00Z"
+    assert accepted.json()["cron_expression"] is None
+
+    missing_run_at = client.post(
+        "/api/scheduled-tasks", json={**base, "schedule_kind": "once"}
+    )
+    assert missing_run_at.status_code == 422
+
+    mixed = client.post(
+        "/api/scheduled-tasks",
+        json={
+            **base,
+            "schedule_kind": "once",
+            "run_at": "2026-10-30T09:00:00Z",
+            "cron_expression": "0 9 * * *",
+        },
+    )
+    assert mixed.status_code == 422
+
+    cron_with_run_at = client.post(
+        "/api/scheduled-tasks",
+        json={**base, "cron_expression": "0 9 * * *", "run_at": "2026-10-30T09:00:00Z"},
+    )
+    assert cron_with_run_at.status_code == 422
+
+
+def test_cron_schedule_defaults_to_cron_kind(monkeypatch):
+    async def fake_create_scheduled_job(*, data, **_kwargs):
+        return data
+
+    monkeypatch.setattr(router_module, "create_scheduled_job", fake_create_scheduled_job)
+
+    response = _client().post(
+        "/api/scheduled-tasks",
+        json={
+            "request_id": "create-request-cron",
+            "name": "Daily",
+            "project_id": "project-1",
+            "agent_slug": "chatbot",
+            "prompt": "hello",
+            "cron_expression": "0 9 * * *",
+            "timezone": "UTC",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["schedule_kind"] == "cron"

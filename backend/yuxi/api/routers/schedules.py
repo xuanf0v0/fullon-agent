@@ -1,7 +1,9 @@
 """用户 Agent 定时任务 HTTP 适配层。"""
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yuxi.api.dependencies.auth import get_db, get_required_user
@@ -27,11 +29,28 @@ class ScheduledAgentCreate(BaseModel):
     project_id: str = Field(..., max_length=64)
     agent_slug: str = Field(..., max_length=64)
     prompt: str = Field(..., max_length=32_000)
-    cron_expression: str = Field(..., max_length=100)
+    schedule_kind: Literal["cron", "once"] = "cron"
+    cron_expression: str | None = Field(None, max_length=100)
+    run_at: str | None = Field(None, max_length=64)
     timezone: str = Field(..., max_length=64)
     tool_approval_mode: str = Field("default", max_length=32)
     model_spec: str | None = Field(None, max_length=512)
     enabled: bool = True
+
+    @model_validator(mode="after")
+    def validate_schedule_shape(self):
+        """按执行方式要求对应字段，拒绝混用两种调度形状。"""
+        if self.schedule_kind == "once":
+            if not self.run_at:
+                raise ValueError("一次性任务必须提供 run_at")
+            if self.cron_expression:
+                raise ValueError("一次性任务不能提供 cron_expression")
+        else:
+            if not self.cron_expression:
+                raise ValueError("周期任务必须提供 cron_expression")
+            if self.run_at:
+                raise ValueError("周期任务不能提供 run_at")
+        return self
 
 
 class ScheduledAgentUpdate(BaseModel):
@@ -44,6 +63,7 @@ class ScheduledAgentUpdate(BaseModel):
     agent_slug: str | None = Field(None, max_length=64)
     prompt: str | None = Field(None, max_length=32_000)
     cron_expression: str | None = Field(None, max_length=100)
+    run_at: str | None = Field(None, max_length=64)
     timezone: str | None = Field(None, max_length=64)
     tool_approval_mode: str | None = Field(None, max_length=32)
     model_spec: str | None = Field(None, max_length=512)

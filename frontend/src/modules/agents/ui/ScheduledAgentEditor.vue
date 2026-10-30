@@ -16,6 +16,8 @@ import {
   monthOptions,
   parseCronExpression,
   scheduleFrequencies,
+  toDatetimeLocalValue,
+  toISOWithOffset,
   weekdayOptions
 } from '@/modules/agents/model/scheduleFrequency'
 
@@ -42,13 +44,17 @@ const agentValues = computed(() =>
 )
 
 function initialForm(job) {
-  const schedule = job ? parseCronExpression(job.cron_expression) : defaultSchedule
+  const once = job?.schedule_kind === 'once'
+  const schedule = job && !once ? parseCronExpression(job.cron_expression) : defaultSchedule
   return {
     name: job?.name ?? '新建定时任务',
     prompt: job?.prompt || '',
     project_id: job?.project_id || '',
     agent_slug: job?.agent_slug || agentValues.value[0] || '',
     ...schedule,
+    frequency: once ? 'once' : schedule.frequency,
+    scheduleKind: once ? 'once' : 'cron',
+    onceAt: once ? toDatetimeLocalValue(job.run_at) : '',
     cronExpression:
       schedule?.cronExpression || buildCronExpression(schedule) || defaultSchedule.cronExpression,
     model_spec: job?.model_spec || '',
@@ -113,6 +119,15 @@ function validationMessage() {
   if (!form.prompt.trim()) return '请输入任务指令'
   if (!form.project_id || form.project_id === AUTO_PROJECT_ID) return '请选择一个 Project'
   if (!form.agent_slug) return '请选择执行智能体'
+  if (form.scheduleKind === 'once') {
+    if (!form.onceAt) return '请选择一次性任务的执行时间'
+    // 已触发的一次性任务允许修改其它字段；只有改时间时才要求未来时间。
+    const unchanged = props.job && form.onceAt === toDatetimeLocalValue(props.job.run_at)
+    if (!unchanged && new Date(form.onceAt).getTime() <= Date.now() - 5000) {
+      return '执行时间必须晚于当前时间'
+    }
+    return ''
+  }
   if (form.frequency === 'weekly' && !form.weekdays.length) return '请至少选择一个执行日'
   if (form.frequency !== 'custom' && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(form.time)) {
     return '请选择执行时间'
@@ -126,19 +141,30 @@ function validationMessage() {
 function changePayload() {
   const validationError = validationMessage()
   if (validationError) return { error: validationError, payload: null }
-  return {
-    error: '',
-    payload: {
-      name: form.name.trim(),
-      prompt: form.prompt.trim(),
-      project_id: form.project_id,
-      agent_slug: form.agent_slug,
-      cron_expression: buildCronExpression(form),
-      model_spec: form.model_spec,
-      timezone: form.timezone,
-      tool_approval_mode: form.tool_approval_mode
-    }
+  const payload = {
+    name: form.name.trim(),
+    prompt: form.prompt.trim(),
+    project_id: form.project_id,
+    agent_slug: form.agent_slug,
+    model_spec: form.model_spec,
+    timezone: form.timezone,
+    tool_approval_mode: form.tool_approval_mode
   }
+  if (form.scheduleKind === 'once') {
+    const runAt = toISOWithOffset(form.onceAt)
+    if (!props.job) {
+      // 执行方式在创建后不可切换，新建时才提交 kind 与时间。
+      payload.schedule_kind = 'once'
+      payload.run_at = runAt
+      payload.cron_expression = null
+    } else if (form.onceAt !== toDatetimeLocalValue(props.job.run_at)) {
+      payload.run_at = runAt
+    }
+  } else {
+    payload.cron_expression = buildCronExpression(form)
+    if (!props.job) payload.schedule_kind = 'cron'
+  }
+  return { error: '', payload }
 }
 
 function toggleWeekday(day) {
@@ -176,9 +202,17 @@ watch(
   { deep: true }
 )
 
-/** 切换频率并保留切换前的结构化 Cron。 */
+/** 执行方式创建后不可切换：编辑既有一任务时锁住另一类选项。 */
+function frequencyLocked(value) {
+  if (!props.job) return false
+  return (value === 'once') !== (form.scheduleKind === 'once')
+}
+
+/** 切换频率并保留切换前的结构化 Cron；一次任务不再使用 cron 形状。 */
 function changeFrequency(frequency) {
-  Object.assign(form, applyFrequencyChange(form, frequency))
+  const scheduleKind = frequency === 'once' ? 'once' : 'cron'
+  if (props.job && scheduleKind !== form.scheduleKind) return
+  Object.assign(form, applyFrequencyChange(form, frequency), { scheduleKind })
 }
 </script>
 
@@ -307,6 +341,7 @@ function changeFrequency(frequency) {
                   name="schedule-frequency"
                   :value="frequency.value"
                   :checked="form.frequency === frequency.value"
+                  :disabled="frequencyLocked(frequency.value)"
                   @change="changeFrequency(frequency.value)"
                 />
                 <span>{{ frequency.label }}</span>
@@ -349,7 +384,11 @@ function changeFrequency(frequency) {
             </select>
           </div>
         </div>
-        <label class="setting-row">
+        <label v-if="form.scheduleKind === 'once'" class="setting-row">
+          <span>执行时间</span>
+          <input v-model="form.onceAt" type="datetime-local" aria-label="一次性执行时间" />
+        </label>
+        <label v-else class="setting-row">
           <span>{{ form.frequency === 'custom' ? 'Cron' : '时间' }}</span>
           <input
             v-if="form.frequency === 'custom'"

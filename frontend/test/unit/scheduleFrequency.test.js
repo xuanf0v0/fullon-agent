@@ -3,8 +3,11 @@ import assert from 'node:assert/strict'
 import {
   applyFrequencyChange,
   buildCronExpression,
+  describeOnceSchedule,
   describeSchedule,
-  parseCronExpression
+  parseCronExpression,
+  toDatetimeLocalValue,
+  toISOWithOffset
 } from '../../src/modules/agents/model/scheduleFrequency.js'
 
 assert.equal(buildCronExpression({ frequency: 'daily', time: '09:05' }), '5 9 * * *')
@@ -60,3 +63,13 @@ assert.equal(
 )
 
 console.log('scheduleFrequency: all assertions passed')
+
+assert.equal(toISOWithOffset('2026-10-30T09:00'), new Date('2026-10-30T09:00').toISOString())
+assert.equal(toISOWithOffset(''), '')
+assert.equal(
+  new Date(toISOWithOffset(toDatetimeLocalValue('2026-10-30T01:00:00.000Z'))).getTime(),
+  new Date('2026-10-30T01:00:00.000Z').getTime()
+)
+assert.equal(toDatetimeLocalValue(''), '')
+assert.match(describeOnceSchedule('2026-10-30T01:00:00.000Z'), /^一次 \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)
+assert.equal(describeOnceSchedule(''), '一次')

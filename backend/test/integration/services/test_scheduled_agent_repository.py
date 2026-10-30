@@ -10,6 +10,7 @@ from datetime import timedelta
 
 import pytest
 from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from yuxi.modules.schedules.repository import ScheduledAgentRepository
@@ -501,5 +502,101 @@ async def test_account_soft_deletion_removes_scheduled_job_history():
             await db.execute(delete(ScheduledAgentJob).where(ScheduledAgentJob.id == job_id))
             await db.execute(delete(Project).where(Project.id == project_id))
             await db.execute(delete(User).where(User.uid.in_([uid, actor_uid])))
+            await db.commit()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.self_managed_resources
+async def test_once_job_claim_disables_after_first_run_and_rejects_cron_shape():
+    """一次性任务首次领取后停用；数据库约束拒绝混用 cron 与 once 形状。"""
+    database_url = os.environ["POSTGRES_URL"]
+    engine = create_async_engine(database_url, poolclass=NullPool)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    uid = f"scheduled-once-{uuid.uuid4()}"
+    project_id = str(uuid.uuid4())
+    job_id = str(uuid.uuid4())
+
+    try:
+        async with session_factory() as db:
+            db.add(User(username=uid, uid=uid, password_hash="test", role="user"))
+            await db.flush()
+            db.add(
+                Project(
+                    id=project_id,
+                    uid=uid,
+                    name="Once Project",
+                    selection_status="selectable",
+                    workdir_path=f"projects/{project_id}",
+                    directory_mode="managed",
+                )
+            )
+            await db.flush()
+            db.add(
+                ScheduledAgentJob(
+                    id=job_id,
+                    uid=uid,
+                    creation_request_id=f"test-create-{job_id}",
+                    creation_intent_hash="0" * 64,
+                    project_id=project_id,
+                    agent_slug="chatbot",
+                    name="Once Job",
+                    prompt="hello",
+                    tool_approval_mode="default",
+                    schedule_kind="once",
+                    cron_expression=None,
+                    run_at=utc_now() - timedelta(minutes=1),
+                    timezone="UTC",
+                    enabled=True,
+                    next_run_at=utc_now() - timedelta(minutes=1),
+                )
+            )
+            await db.commit()
+
+        async with session_factory() as db:
+            run = await _claim_due_run(db=db, now=utc_now())
+            assert run is not None
+
+        async with session_factory() as db:
+            job = await db.get(ScheduledAgentJob, job_id)
+            runs = list(
+                (await db.execute(select(ScheduledAgentRun).where(ScheduledAgentRun.job_id == job_id))).scalars()
+            )
+            assert job is not None
+            assert job.enabled is False
+            assert job.schedule_kind == "once"
+            assert job.cron_expression is None
+            assert len(runs) == 1
+            assert runs[0].trigger == "scheduled"
+
+        async with session_factory() as db:
+            with pytest.raises(IntegrityError):
+                db.add(
+                    ScheduledAgentJob(
+                        id=str(uuid.uuid4()),
+                        uid=uid,
+                        creation_request_id=f"test-invalid-{uuid.uuid4()}",
+                        creation_intent_hash="1" * 64,
+                        project_id=project_id,
+                        agent_slug="chatbot",
+                        name="Invalid Job",
+                        prompt="hello",
+                        tool_approval_mode="default",
+                        schedule_kind="once",
+                        cron_expression="0 9 * * *",
+                        run_at=utc_now() + timedelta(hours=1),
+                        timezone="UTC",
+                        enabled=True,
+                        next_run_at=utc_now() + timedelta(hours=1),
+                    )
+                )
+                await db.flush()
+            await db.rollback()
+    finally:
+        async with session_factory() as db:
+            await db.execute(delete(ScheduledAgentRun).where(ScheduledAgentRun.job_id == job_id))
+            await db.execute(delete(ScheduledAgentJob).where(ScheduledAgentJob.id == job_id))
+            await db.execute(delete(Project).where(Project.id == project_id))
+            await db.execute(delete(User).where(User.uid == uid))
             await db.commit()
         await engine.dispose()

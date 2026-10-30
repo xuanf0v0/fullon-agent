@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -157,7 +157,9 @@ async def test_enabling_paused_job_schedules_from_current_time(monkeypatch):
     now = datetime(2026, 8, 27, 10, 0, tzinfo=UTC)
     next_time = datetime(2026, 8, 28, 1, 0, tzinfo=UTC)
     job = SimpleNamespace(
+        schedule_kind="cron",
         cron_expression="0 9 * * *",
+        run_at=None,
         timezone="Asia/Shanghai",
         enabled=False,
         next_run_at=datetime(2026, 8, 20, 1, 0, tzinfo=UTC),
@@ -284,7 +286,9 @@ async def test_due_job_claiming_continues_after_one_dispatch_fails(monkeypatch):
 async def test_claim_disables_invalid_schedule_and_continues_to_next_job(monkeypatch):
     invalid = SimpleNamespace(
         id="job-invalid",
+        schedule_kind="cron",
         cron_expression="0 9 * * *",
+        run_at=None,
         timezone="Mars/Olympus",
         next_run_at=datetime(2026, 8, 27, 1, 0, tzinfo=UTC),
         enabled=True,
@@ -292,7 +296,9 @@ async def test_claim_disables_invalid_schedule_and_continues_to_next_job(monkeyp
     )
     valid = SimpleNamespace(
         id="job-valid",
+        schedule_kind="cron",
         cron_expression="0 9 * * *",
+        run_at=None,
         timezone="UTC",
         next_run_at=datetime(2026, 8, 27, 9, 0, tzinfo=UTC),
         enabled=True,
@@ -326,3 +332,164 @@ async def test_claim_disables_invalid_schedule_and_continues_to_next_job(monkeyp
     assert invalid.enabled is False
     assert valid.next_run_at == datetime(2026, 8, 28, 9, 0, tzinfo=UTC)
     assert commits == 2
+
+
+@pytest.mark.parametrize(
+    "run_at",
+    ["", "not-a-time", "2026-08-27T10:00:00", "2026-08-27T09:59:00+00:00"],
+)
+def test_validate_once_run_at_rejects_empty_naive_or_past_time(run_at):
+    with pytest.raises(DomainError) as exc_info:
+        service.validate_once_run_at(run_at, datetime(2026, 8, 27, 10, 0, tzinfo=UTC))
+
+    assert isinstance(exc_info.value, InvalidInputError)
+
+
+def test_validate_once_run_at_normalizes_offset_to_utc():
+    result = service.validate_once_run_at(
+        "2026-08-27T18:30:00+08:00", datetime(2026, 8, 27, 10, 0, tzinfo=UTC)
+    )
+
+    assert result == datetime(2026, 8, 27, 10, 30, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_claiming_once_job_disables_it_without_recomputing_schedule(monkeypatch):
+    run_at = datetime(2026, 8, 27, 10, 0, tzinfo=UTC)
+    job = SimpleNamespace(
+        id="job-once",
+        schedule_kind="once",
+        cron_expression=None,
+        run_at=run_at,
+        timezone="UTC",
+        next_run_at=run_at,
+        enabled=True,
+        updated_at=None,
+    )
+    jobs = iter([job])
+    commits = 0
+
+    class Repository:
+        async def claim_due_job(self, *, now):
+            return next(jobs, None)
+
+        async def has_active_run(self, job_id):
+            assert job_id == "job-once"
+            return False
+
+    class Db:
+        async def commit(self):
+            nonlocal commits
+            commits += 1
+
+    run = SimpleNamespace(id="run-once", status="dispatching")
+
+    async def create_run_record(**kwargs):
+        assert kwargs["job"] is job
+        return run
+
+    monkeypatch.setattr(service, "ScheduledAgentRepository", lambda _db: Repository())
+    monkeypatch.setattr(service, "_create_run_record", create_run_record)
+
+    result = await service._claim_due_run(db=Db(), now=datetime(2026, 8, 27, 10, 0, tzinfo=UTC))
+
+    assert result is run
+    assert job.enabled is False
+    assert job.next_run_at == run_at
+    assert commits == 1
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_switching_execution_kind(monkeypatch):
+    job = SimpleNamespace(schedule_kind="cron", uid="user-1", id="job-1")
+
+    class Repository:
+        async def get_job(self, job_id, uid, *, lock):
+            assert (job_id, uid, lock) == ("job-1", "user-1", True)
+            return job
+
+    monkeypatch.setattr(service, "ScheduledAgentRepository", lambda _db: Repository())
+
+    with pytest.raises(DomainError) as exc_info:
+        await service.update_scheduled_job(
+            job_id="job-1",
+            user=SimpleNamespace(uid="user-1"),
+            db=object(),
+            data={"schedule_kind": "once"},
+        )
+
+    assert isinstance(exc_info.value, InvalidInputError)
+
+
+def test_disabled_once_job_dispatch_stays_deliverable_after_claim():
+    """一次性任务领取时已停用，已领取的触发仍须投递。"""
+    job = SimpleNamespace(deleted_at=None, enabled=False, schedule_kind="once")
+    scheduled_run = SimpleNamespace(trigger="scheduled")
+
+    assert service._dispatch_cancelled(job, scheduled_run) is False
+
+
+def test_disabled_cron_or_deleted_once_dispatch_is_cancelled():
+    cron_job = SimpleNamespace(deleted_at=None, enabled=False, schedule_kind="cron")
+    deleted_once = SimpleNamespace(
+        deleted_at=datetime(2026, 8, 27, 10, 0, tzinfo=UTC),
+        enabled=False,
+        schedule_kind="once",
+    )
+    scheduled_run = SimpleNamespace(trigger="scheduled")
+
+    assert service._dispatch_cancelled(cron_job, scheduled_run) is True
+    assert service._dispatch_cancelled(deleted_once, scheduled_run) is True
+    assert (
+        service._dispatch_cancelled(cron_job, SimpleNamespace(trigger="manual")) is False
+    )
+
+
+@pytest.mark.asyncio
+async def test_once_job_overlapping_active_run_is_reenabled_and_deferred(monkeypatch):
+    now = datetime(2026, 8, 27, 10, 0, tzinfo=UTC)
+    run_at = now - timedelta(minutes=1)
+    job = SimpleNamespace(
+        id="job-once",
+        schedule_kind="once",
+        cron_expression=None,
+        run_at=run_at,
+        timezone="UTC",
+        next_run_at=run_at,
+        enabled=True,
+        updated_at=None,
+    )
+    claims = 0
+
+    class Repository:
+        async def claim_due_job(self, *, now):
+            nonlocal claims
+            if job.next_run_at > now:
+                return None
+            claims += 1
+            return job
+
+        async def has_active_run(self, job_id):
+            assert job_id == "job-once"
+            return True
+
+    class Db:
+        commits = 0
+
+        async def commit(self):
+            self.commits += 1
+
+    async def create_run_record(**kwargs):
+        raise AssertionError("进行中的运行不应再写 skipped 记录")
+
+    monkeypatch.setattr(service, "ScheduledAgentRepository", lambda _db: Repository())
+    monkeypatch.setattr(service, "_create_run_record", create_run_record)
+    db = Db()
+
+    result = await service._claim_due_run(db=db, now=now)
+
+    assert result is None
+    assert claims == 1
+    assert job.enabled is True
+    assert job.next_run_at == now + timedelta(seconds=30)
+    assert db.commits == 1

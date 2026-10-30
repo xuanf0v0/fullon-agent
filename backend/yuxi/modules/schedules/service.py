@@ -53,6 +53,16 @@ def _intent_hash(data: dict) -> str:
     return json_intent_hash(data)
 
 
+def validate_timezone(timezone: str) -> str:
+    """校验 IANA 时区并返回去空白后的值。"""
+    zone = str(timezone or "").strip()
+    try:
+        ZoneInfo(zone)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise InvalidInputError("timezone 必须是有效的 IANA 时区") from None
+    return zone
+
+
 def validate_schedule(cron_expression: str, timezone: str) -> tuple[str, str]:
     """校验 cron 表达式和 IANA 时区。"""
     expression = str(cron_expression or "").strip()
@@ -63,16 +73,29 @@ def validate_schedule(cron_expression: str, timezone: str) -> tuple[str, str]:
             raise ValueError
     except (TypeError, ValueError):
         raise InvalidInputError("cron_expression 不是有效的 5 段 cron 表达式") from None
-    zone = str(timezone or "").strip()
-    try:
-        ZoneInfo(zone)
-    except (ZoneInfoNotFoundError, ValueError):
-        raise InvalidInputError("timezone 必须是有效的 IANA 时区") from None
+    zone = validate_timezone(timezone)
     try:
         next_run_at(expression, zone, utc_now())
     except (CroniterBadDateError, CroniterError, OverflowError, ValueError):
         raise InvalidInputError("cron_expression 没有可计算的下一次触发时间") from None
     return expression, zone
+
+
+def validate_once_run_at(run_at: str, now: datetime) -> datetime:
+    """校验一次性绝对时间并统一为 UTC；拒绝过去时间与无时区输入。"""
+    raw = str(run_at or "").strip()
+    if not raw:
+        raise InvalidInputError("run_at 不能为空")
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        raise InvalidInputError("run_at 必须是有效的 ISO 8601 时间") from None
+    if parsed.tzinfo is None:
+        raise InvalidInputError("run_at 必须包含时区偏移")
+    parsed = parsed.astimezone(ZoneInfo("UTC"))
+    if parsed <= now - timedelta(seconds=5):
+        raise InvalidInputError("一次性任务的执行时间必须晚于当前时间")
+    return parsed
 
 
 def next_run_at(cron_expression: str, timezone: str, after: datetime) -> datetime:
@@ -204,7 +227,23 @@ async def create_scheduled_job(*, user: User, db: AsyncSession, data: dict) -> d
     agent_slug = _normalize_text(data.get("agent_slug"), "agent_slug", 64)
     name = _normalize_text(data.get("name"), "name", MAX_NAME_LENGTH)
     prompt = _normalize_text(data.get("prompt"), "prompt", MAX_PROMPT_LENGTH)
-    expression, timezone = validate_schedule(data.get("cron_expression"), data.get("timezone"))
+    schedule_kind = str(data.get("schedule_kind") or "cron").strip()
+    if schedule_kind not in {"cron", "once"}:
+        raise InvalidInputError("schedule_kind 只能是 cron 或 once")
+    now = utc_now()
+    timezone = validate_timezone(data.get("timezone"))
+    if schedule_kind == "once":
+        if str(data.get("cron_expression") or "").strip():
+            raise InvalidInputError("一次性任务不能同时提供 cron_expression")
+        expression = None
+        run_at = validate_once_run_at(data.get("run_at"), now)
+        next_run = run_at
+    else:
+        if data.get("run_at"):
+            raise InvalidInputError("周期任务不能提供 run_at")
+        expression, timezone = validate_schedule(data.get("cron_expression"), timezone)
+        run_at = None
+        next_run = next_run_at(expression, timezone, now)
     model_spec = str(data.get("model_spec") or "").strip() or None
     if model_spec and len(model_spec) > 512:
         raise InvalidInputError("model_spec 不能超过 512 个字符")
@@ -220,7 +259,9 @@ async def create_scheduled_job(*, user: User, db: AsyncSession, data: dict) -> d
             "prompt": prompt,
             "tool_approval_mode": tool_approval_mode,
             "model_spec": model_spec,
+            "schedule_kind": schedule_kind,
             "cron_expression": expression,
+            "run_at": run_at.isoformat() if run_at else None,
             "timezone": timezone,
             "enabled": bool(data.get("enabled", True)),
         }
@@ -233,7 +274,6 @@ async def create_scheduled_job(*, user: User, db: AsyncSession, data: dict) -> d
 
     await _validate_project(project_id, user, db)
     await _validate_agent(agent_slug, user, db)
-    now = utc_now()
     job = ScheduledAgentJob(
         id=str(uuid.uuid4()),
         uid=str(user.uid),
@@ -245,10 +285,12 @@ async def create_scheduled_job(*, user: User, db: AsyncSession, data: dict) -> d
         prompt=prompt,
         tool_approval_mode=tool_approval_mode,
         model_spec=model_spec,
+        schedule_kind=schedule_kind,
         cron_expression=expression,
+        run_at=run_at,
         timezone=timezone,
         enabled=bool(data.get("enabled", True)),
-        next_run_at=next_run_at(expression, timezone, now),
+        next_run_at=next_run,
         created_at=now,
         updated_at=now,
     )
@@ -294,17 +336,35 @@ async def update_scheduled_job(*, job_id: str, user: User, db: AsyncSession, dat
         if model_spec and len(model_spec) > 512:
             raise InvalidInputError("model_spec 不能超过 512 个字符")
         job.model_spec = model_spec
-    expression = data.get("cron_expression", job.cron_expression)
-    timezone = data.get("timezone", job.timezone)
-    expression, timezone = validate_schedule(expression, timezone)
-    if expression != job.cron_expression or timezone != job.timezone:
-        job.next_run_at = next_run_at(expression, timezone, utc_now())
-    job.cron_expression, job.timezone = expression, timezone
+    if "schedule_kind" in data and data["schedule_kind"] != job.schedule_kind:
+        raise InvalidInputError("执行方式不可修改，请新建任务")
     now = utc_now()
+    timezone = validate_timezone(data.get("timezone", job.timezone))
+    if job.schedule_kind == "once":
+        if str(data.get("cron_expression") or "").strip():
+            raise InvalidInputError("一次性任务不能提供 cron_expression")
+        run_at = job.run_at
+        if "run_at" in data:
+            run_at = validate_once_run_at(data["run_at"], now)
+        if run_at != job.run_at:
+            job.run_at = run_at
+            job.next_run_at = run_at
+    else:
+        expression = data.get("cron_expression", job.cron_expression)
+        expression, timezone = validate_schedule(expression, timezone)
+        if expression != job.cron_expression or timezone != job.timezone:
+            job.next_run_at = next_run_at(expression, timezone, now)
+        job.cron_expression = expression
+    job.timezone = timezone
     if "enabled" in data:
         enabled = bool(data["enabled"])
         if enabled and not job.enabled:
-            job.next_run_at = next_run_at(expression, timezone, now)
+            if job.schedule_kind == "once":
+                if job.run_at is None or job.run_at <= now - timedelta(seconds=5):
+                    raise InvalidInputError("一次性任务的执行时间已过")
+                job.next_run_at = job.run_at
+            else:
+                job.next_run_at = next_run_at(job.cron_expression, job.timezone, now)
         job.enabled = enabled
     job.updated_at = now
     await db.commit()
@@ -395,6 +455,14 @@ async def _settle_dispatch_error(
         return _execution_to_dict(scheduled_run, input_item, run)
 
 
+def _dispatch_cancelled(job, scheduled_run) -> bool:
+    """已领取的触发仅在任务删除或周期任务停用时取消；一次性任务领取即停用。"""
+    return scheduled_run.trigger == "scheduled" and (
+        job.deleted_at is not None
+        or (not job.enabled and getattr(job, "schedule_kind", "cron") != "once")
+    )
+
+
 async def dispatch_scheduled_run(*, scheduled_run_id: str) -> dict | None:
     """用同一 Thread 接入用例提交定时任务的首批输入。"""
     try:
@@ -409,7 +477,7 @@ async def dispatch_scheduled_run(*, scheduled_run_id: str) -> dict | None:
                 scheduled_run.error_message = "任务已删除、停用或用户不存在"
                 await db.commit()
                 return scheduled_run.to_dict()
-            if scheduled_run.trigger == "scheduled" and (not job.enabled or job.deleted_at is not None):
+            if _dispatch_cancelled(job, scheduled_run):
                 scheduled_run.status = "cancelled"
                 scheduled_run.error_message = "任务已停用或删除"
                 await db.commit()
@@ -495,17 +563,26 @@ async def _claim_due_run(*, db: AsyncSession, now: datetime) -> ScheduledAgentRu
     repo = ScheduledAgentRepository(db)
     while job := await repo.claim_due_job(now=now):
         scheduled_for = job.next_run_at
-        try:
-            job.next_run_at = next_run_at(job.cron_expression, job.timezone, now)
-        except (CroniterError, OverflowError, TypeError, ValueError, ZoneInfoNotFoundError):
+        if job.schedule_kind == "once":
+            if await repo.has_active_run(job.id):
+                # 一次性任务撞上进行中的运行不算消费，顺延重试且不写重复的 skipped 记录。
+                job.next_run_at = now + timedelta(seconds=30)
+                job.updated_at = now
+                await db.commit()
+                continue
             job.enabled = False
-            job.updated_at = now
-            await db.commit()
-            logger.error(
-                f"已停用无法计算下次触发时间的定时任务: scheduled_job={job.id}",
-                exc_info=True,
-            )
-            continue
+        else:
+            try:
+                job.next_run_at = next_run_at(job.cron_expression, job.timezone, now)
+            except (CroniterError, OverflowError, TypeError, ValueError, ZoneInfoNotFoundError):
+                job.enabled = False
+                job.updated_at = now
+                await db.commit()
+                logger.error(
+                    f"已停用无法计算下次触发时间的定时任务: scheduled_job={job.id}",
+                    exc_info=True,
+                )
+                continue
         job.updated_at = now
         run = await _create_run_record(
             repo=repo,
@@ -514,6 +591,13 @@ async def _claim_due_run(*, db: AsyncSession, now: datetime) -> ScheduledAgentRu
             occurrence_key=f"scheduled:{scheduled_for.isoformat()}",
             scheduled_for=scheduled_for,
         )
+        if job.schedule_kind == "once" and run.status == "skipped":
+            # 一次性任务撞上进行中的运行不算消费，恢复启用并顺延到下一轮重试。
+            job.enabled = True
+            job.next_run_at = now + timedelta(seconds=30)
+            job.updated_at = now
+            await db.commit()
+            continue
         await db.commit()
         return run
     return None

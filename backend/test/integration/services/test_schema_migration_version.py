@@ -16,6 +16,7 @@ from yuxi.infrastructure.postgres.connection import postgres_conninfo
 from yuxi.modules.agents.models.sandbox import UserSandbox
 from yuxi.infrastructure.postgres.schema import BUSINESS_SCHEMA_VERSION, KNOWLEDGE_SCHEMA_VERSION
 from yuxi.migrations import main as schema_bootstrap
+from yuxi.migrations import one_shot_schedules
 from yuxi.migrations.schema import (
     create_business_tables,
     create_knowledge_tables,
@@ -25,6 +26,7 @@ from yuxi.migrations.schema import (
 )
 from yuxi.infrastructure.postgres.schema import get_schema_versions, require_current_schema
 from yuxi.modules.knowledge.models import KnowledgeBase
+from yuxi.shared.errors import StateConflictError
 from test.integration.support.postgres_schema import (
     create_isolated_manager as _create_isolated_manager,
     drop_isolated_schema as _drop_isolated_schema,
@@ -176,7 +178,7 @@ async def test_fresh_business_schema_contains_input_lifecycle_without_request_ta
             "thread_id",
         } <= input_columns
         assert "conversation_thread_id" not in input_columns
-        assert BUSINESS_SCHEMA_VERSION == 1
+        assert BUSINESS_SCHEMA_VERSION == 2
         assert KNOWLEDGE_SCHEMA_VERSION == 2
     finally:
         await _drop_isolated_schema(schema, admin_engine, scoped_engine)
@@ -538,4 +540,17 @@ async def test_fresh_initializer_creates_complete_baseline_and_restarts_without_
             assert await conn.scalar(text("SELECT count(*) FROM knowledge_bases")) == 2
     finally:
         await pool.close()
+        await _drop_isolated_schema(schema, admin, engine)
+
+
+async def test_one_shot_migration_rejects_unknown_business_version():
+    """business 版本不是 v1/v2 时，一次性任务迁移在写任何 DDL 前拒绝。"""
+    schema, admin, engine, manager = await _create_isolated_manager("pytest_business_guard")
+    try:
+        await create_schema_version_table(manager)
+        await record_schema_version(manager, "business", 3)
+        with pytest.raises(StateConflictError, match="business v1 到 v2"):
+            await one_shot_schedules.convert(manager)
+        assert await get_schema_versions(manager) == {"business": 3}
+    finally:
         await _drop_isolated_schema(schema, admin, engine)

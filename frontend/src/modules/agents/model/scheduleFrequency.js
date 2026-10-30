@@ -1,4 +1,5 @@
 export const scheduleFrequencies = [
+  { value: 'once', label: '一次' },
   { value: 'daily', label: '每天' },
   { value: 'weekly', label: '每周' },
   { value: 'monthly', label: '每月' },
@@ -27,6 +28,33 @@ export const dayOptions = Array.from({ length: 31 }, (_, index) => ({
 }))
 
 const pad = (value) => String(value).padStart(2, '0')
+
+/** 把 ISO 时间转成 datetime-local 输入值；无效值返回空串。 */
+export const toDatetimeLocalValue = (isoValue) => {
+  if (!isoValue) return ''
+  const date = new Date(isoValue)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours()
+  )}:${pad(date.getMinutes())}`
+}
+
+/** datetime-local 值按浏览器本地时区解释，转成 Host 可校验的 ISO 时间。 */
+export const toISOWithOffset = (localValue) => {
+  if (!localValue) return ''
+  const date = new Date(localValue)
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString()
+}
+
+/** 一次性任务的列表/详情展示文案。 */
+export const describeOnceSchedule = (isoValue) => {
+  if (!isoValue) return '一次'
+  const date = new Date(isoValue)
+  if (Number.isNaN(date.getTime())) return '一次'
+  return `一次 ${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
+    date.getHours()
+  )}:${pad(date.getMinutes())}`
+}
 
 const normalizeTime = (time) => {
   const match = String(time || '').match(/^(\d{1,2}):(\d{1,2})$/)

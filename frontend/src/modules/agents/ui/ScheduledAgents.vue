@@ -12,7 +12,11 @@ import {
 } from '@/modules/agents/ui/scheduledAgentAutosave'
 import PageShoulder from '@/shared/ui/PageShoulder.vue'
 import { useAgentStore } from '@/modules/agents/model/agent'
-import { describeSchedule, parseCronExpression } from '@/modules/agents/model/scheduleFrequency'
+import {
+  describeOnceSchedule,
+  describeSchedule,
+  parseCronExpression
+} from '@/modules/agents/model/scheduleFrequency'
 
 const router = useRouter()
 const agentStore = useAgentStore()
@@ -95,6 +99,7 @@ async function load({ silent = false } = {}) {
 }
 
 function scheduleLabel(job) {
+  if (job.schedule_kind === 'once') return describeOnceSchedule(job.run_at)
   return describeSchedule(parseCronExpression(job.cron_expression))
 }
 
@@ -172,6 +177,16 @@ async function runAction(job, action, fallback) {
   } finally {
     activeActionId.value = ''
   }
+}
+
+/** 已过执行时间的一次性任务无法恢复，只能新建。 */
+function resumeUnavailable(job) {
+  return (
+    Boolean(job) &&
+    !job.enabled &&
+    job.schedule_kind === 'once' &&
+    new Date(job.run_at || 0).getTime() <= Date.now()
+  )
 }
 
 function toggle(job) {
@@ -370,7 +385,10 @@ defineExpose({ beforeLeave: flushAutoSave, loading, saving })
                 </button>
                 <button
                   type="button"
-                  :disabled="Boolean(activeActionId)"
+                  :disabled="Boolean(activeActionId) || resumeUnavailable(selectedJob)"
+                  :title="
+                    resumeUnavailable(selectedJob) ? '一次性任务的执行时间已过，请新建任务' : undefined
+                  "
                   @click="toggle(selectedJob)"
                 >
                   <Pause v-if="selectedJob.enabled" :size="15" aria-hidden="true" />
