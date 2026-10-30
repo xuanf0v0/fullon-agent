@@ -46,13 +46,13 @@ export const configApi = {
   /**
    * 获取系统日志
    * @param {string} levels - 可选的日志级别过滤，多个级别用逗号分隔
+   * @param {number} limit - 返回最近多少行
    * @returns {Promise} - 系统日志
    */
-  getLogs: async (levels) => {
-    const url = levels
-      ? `/api/system/logs?levels=${encodeURIComponent(levels)}`
-      : '/api/system/logs'
-    return apiAdminGet(url)
+  getLogs: async (levels, limit = 200) => {
+    const params = new URLSearchParams({ limit: String(limit) })
+    if (levels) params.set('levels', levels)
+    return apiAdminGet(`/api/system/logs?${params.toString()}`)
   }
 }
 

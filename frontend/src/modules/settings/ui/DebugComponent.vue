@@ -115,6 +115,15 @@
                 <span class="log-count-meta" v-if="processedLogs.length">
                   匹配 <strong>{{ processedLogs.length }}</strong> / {{ state.rawLogs.length }} 行
                 </span>
+
+                <a-button
+                  v-if="hasMoreLogs"
+                  size="small"
+                  :loading="state.fetching"
+                  @click="loadMoreLogs"
+                >
+                  加载更早日志（{{ state.rawLogs.length }} / {{ LOG_MAX_LINES }}）
+                </a-button>
               </div>
 
               <div class="toolbar-right">
@@ -122,7 +131,7 @@
                   <a-button
                     size="small"
                     :loading="state.fetching"
-                    @click="fetchLogs"
+                    @click="fetchLogs()"
                     class="tool-btn icon-only"
                   >
                     <template #icon><RefreshCw :size="13" /></template>
@@ -145,7 +154,12 @@
                 </a-tooltip>
 
                 <a-tooltip title="复制当前过滤的全部日志">
-                  <a-button size="small" @click="copyAllLogs" class="tool-btn icon-only">
+                  <a-button
+                    size="small"
+                    :loading="state.exporting"
+                    @click="copyAllLogs"
+                    class="tool-btn icon-only"
+                  >
                     <template #icon>
                       <Check v-if="state.isLogsCopied" :size="13" class="copied-icon" />
                       <Copy v-else :size="13" />
@@ -154,7 +168,12 @@
                 </a-tooltip>
 
                 <a-tooltip title="下载日志为 .log 文件">
-                  <a-button size="small" @click="downloadLogs" class="tool-btn icon-only">
+                  <a-button
+                    size="small"
+                    :loading="state.exporting"
+                    @click="downloadLogs"
+                    class="tool-btn icon-only"
+                  >
                     <template #icon><Download :size="13" /></template>
                   </a-button>
                 </a-tooltip>
@@ -200,6 +219,8 @@
                 <div
                   v-for="(log, index) in processedLogs"
                   :key="index"
+                  :data-raw="log.raw"
+                  :data-raw-index="log.rawIndex"
                   :class="['terminal-line', `level-${log.level.toLowerCase()}`]"
                 >
                   <span class="line-no">{{ index + 1 }}</span>
@@ -754,6 +775,8 @@ const logLevels = [
 const debugWrapper = ref(null)
 const logContainer = ref(null)
 let autoRefreshInterval = null
+const LOG_PAGE_SIZE = 200
+const LOG_MAX_LINES = 1000
 
 // 状态管理
 const state = reactive({
@@ -765,6 +788,9 @@ const state = reactive({
   searchText: '',
   selectedLevels: ['INFO', 'WARNING', 'ERROR', 'DEBUG'],
   rawLogs: [],
+  logLimit: LOG_PAGE_SIZE,
+  hasMore: false,
+  exporting: false,
   isFullscreen: false,
   isLogsCopied: false,
   isConfigCopied: false,
@@ -812,16 +838,22 @@ function parseLogLine(line) {
 }
 
 // 处理日志过滤
-const processedLogs = computed(() => {
-  return state.rawLogs.map(parseLogLine).filter((log) => {
-    if (!log) return false
-    if (log.level && !state.selectedLevels.includes(log.level.toUpperCase())) {
-      return false
-    }
-    if (!state.searchText) return true
-    return log.raw.toLowerCase().includes(state.searchText.toLowerCase())
-  })
-})
+function passesLogFilters(log) {
+  if (!log) return false
+  if (log.level && !state.selectedLevels.includes(log.level.toUpperCase())) {
+    return false
+  }
+  if (!state.searchText) return true
+  return log.raw.toLowerCase().includes(state.searchText.toLowerCase())
+}
+
+const processedLogs = computed(() =>
+  state.rawLogs
+    .map((raw, rawIndex) => ({ ...parseLogLine(raw), rawIndex }))
+    .filter(passesLogFilters)
+)
+
+const hasMoreLogs = computed(() => state.hasMore && state.logLimit < LOG_MAX_LINES)
 
 // 导航 Tab 定义 (移除了知识库状态与智能体运行时)
 const tabs = computed(() => [
@@ -853,25 +885,98 @@ function formatTimestamp(timestamp) {
 }
 
 // 获取系统日志
-async function fetchLogs() {
+let fetchSeq = 0
+
+function captureLogAnchor() {
+  const container = logContainer.value
+  if (!container) return null
+  const rows = [...container.querySelectorAll('.terminal-line')]
+  const containerTop = container.getBoundingClientRect().top
+  const anchor = rows.find((row) => row.getBoundingClientRect().bottom > containerTop)
+  if (!anchor) return null
+  const sameLines = rows.filter((row) => row.dataset.raw === anchor.dataset.raw)
+  return {
+    rawIndex: Number(anchor.dataset.rawIndex),
+    raw: anchor.dataset.raw,
+    fromBottom: sameLines.length - sameLines.indexOf(anchor),
+    offset: anchor.getBoundingClientRect().top - containerTop
+  }
+}
+
+// 新列表由旧列表尾部加上前插/后附的行组成；用连续后缀对齐得到旧行号的新位置
+function alignLogs(oldLogs, newLogs) {
+  for (let skip = 0; skip < oldLogs.length; skip++) {
+    let pos = newLogs.indexOf(oldLogs[skip])
+    while (pos !== -1) {
+      let matched = 1
+      while (
+        skip + matched < oldLogs.length &&
+        pos + matched < newLogs.length &&
+        oldLogs[skip + matched] === newLogs[pos + matched]
+      ) {
+        matched += 1
+      }
+      if (skip + matched === oldLogs.length) return { skip, pos }
+      pos = newLogs.indexOf(oldLogs[skip], pos + 1)
+    }
+  }
+  return null
+}
+
+function restoreLogAnchor(anchor, oldLogs) {
+  const container = logContainer.value
+  if (!container || !anchor) return false
+  const rows = [...container.querySelectorAll('.terminal-line')]
+  const alignment = alignLogs(oldLogs, state.rawLogs)
+  let row = null
+  if (alignment && anchor.rawIndex >= alignment.skip) {
+    const index = alignment.pos + anchor.rawIndex - alignment.skip
+    row = rows.find((item) => Number(item.dataset.rawIndex) === index)
+  }
+  if (!row) {
+    const sameLines = rows.filter((item) => item.dataset.raw === anchor.raw)
+    row = sameLines[sameLines.length - anchor.fromBottom]
+  }
+  if (!row) return false
+  const offset = row.getBoundingClientRect().top - container.getBoundingClientRect().top
+  container.scrollTop += offset - anchor.offset
+  return true
+}
+
+async function fetchLogs({ limit = state.logLimit, anchor = null } = {}) {
   if (!checkSuperAdminPermission()) return
 
+  const seq = ++fetchSeq
+  const previousLogs = state.rawLogs
   state.fetching = true
   try {
     error.value = ''
     const levelsParam = state.selectedLevels.join(',')
-    const logData = await configApi.getLogs(levelsParam)
+    const logData = await configApi.getLogs(levelsParam, limit)
+    if (seq !== fetchSeq) return
     state.rawLogs = logData.log.split('\n').filter((line) => line.trim())
+    state.logLimit = limit
+    state.hasMore = Boolean(logData.has_more)
 
     await nextTick()
-    if (state.autoScroll) {
+    if (seq !== fetchSeq) return
+    if (anchor && !state.autoScroll) {
+      restoreLogAnchor(anchor, previousLogs)
+    } else if (state.autoScroll) {
       scrollToBottom()
     }
   } catch (err) {
-    error.value = `获取日志失败: ${err.message}`
+    if (seq === fetchSeq) error.value = `获取日志失败: ${err.message}`
   } finally {
-    state.fetching = false
+    if (seq === fetchSeq) state.fetching = false
   }
+}
+
+async function loadMoreLogs() {
+  if (state.fetching || !state.hasMore || state.logLimit >= LOG_MAX_LINES) return
+  const limit = Math.min(LOG_MAX_LINES, state.logLimit + LOG_PAGE_SIZE)
+  const anchor = state.autoScroll ? null : captureLogAnchor()
+  await fetchLogs({ limit, anchor })
 }
 
 const scrollToBottom = useThrottleFn(() => {
@@ -891,12 +996,33 @@ function resumeLogAutoScroll() {
 
 // 清空日志
 function clearLogs() {
+  fetchSeq += 1
+  state.fetching = false
   state.rawLogs = []
+  state.hasMore = false
+  state.logLimit = LOG_PAGE_SIZE
+}
+
+// 复制/下载时补齐到接口允许的最大行数，避免只导出当前分块
+async function loadExportLogs() {
+  if (state.logLimit >= LOG_MAX_LINES) return processedLogs.value
+  state.exporting = true
+  try {
+    const levelsParam = state.selectedLevels.join(',')
+    const logData = await configApi.getLogs(levelsParam, LOG_MAX_LINES)
+    return logData.log.split('\n').filter((line) => line.trim()).map(parseLogLine).filter(passesLogFilters)
+  } catch {
+    message.warning('获取完整日志失败，已使用当前显示内容')
+    return processedLogs.value
+  } finally {
+    state.exporting = false
+  }
 }
 
 // 复制全部日志
 async function copyAllLogs() {
-  const text = processedLogs.value.map((l) => l.raw).join('\n')
+  const logs = await loadExportLogs()
+  const text = logs.map((l) => l.raw).join('\n')
   if (!text) return
   try {
     await copyTextToClipboard(text)
@@ -921,8 +1047,9 @@ async function copyLine(rawLine) {
 }
 
 // 下载日志
-function downloadLogs() {
-  const text = processedLogs.value.map((l) => l.raw).join('\n')
+async function downloadLogs() {
+  const logs = await loadExportLogs()
+  const text = logs.map((l) => l.raw).join('\n')
   const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -993,6 +1120,11 @@ function switchTab(tabKey) {
 watch(showModal, (isOpen) => {
   if (!isOpen) {
     stopAutoRefresh()
+    fetchSeq += 1
+    state.fetching = false
+    state.rawLogs = []
+    state.hasMore = false
+    state.logLimit = LOG_PAGE_SIZE
     return
   }
 

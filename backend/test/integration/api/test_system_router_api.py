@@ -45,7 +45,7 @@ async def test_logs_endpoint_returns_only_api_process_log(test_client, admin_hea
         worker_log.write(f"2026-08-17 20:00:00 - INFO - worker:1 - {worker_marker}\n")
 
     try:
-        response = await test_client.get("/api/system/logs?levels=INFO", headers=admin_headers)
+        response = await test_client.get("/api/system/logs?levels=INFO&limit=1000", headers=admin_headers)
 
         assert response.status_code == 200, response.text
         payload = response.json()

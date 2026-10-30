@@ -1,7 +1,6 @@
 """系统状态、配置、日志与品牌信息路由。"""
 
 import os
-from collections import deque
 from pathlib import Path
 from typing import Literal
 
@@ -27,6 +26,28 @@ from yuxi.modules.system.services.options import save_configuration
 BRAND_STATIC_DIR = Path(__file__).resolve().parents[2] / "modules/system/static"
 
 system = APIRouter(prefix="/system", tags=["system"])
+
+MAX_LOG_LINES = 1000
+TAIL_READ_BYTES = 4 * 1024 * 1024
+MAX_TAIL_LINES = 20000
+
+
+async def _read_log_tail() -> list[str]:
+    """从文件尾部按字节窗口读取，避免每次请求扫描整个日志文件。"""
+    async with aiofiles.open(LOG_FILE, "rb") as f:
+        await f.seek(0, os.SEEK_END)
+        size = await f.tell()
+        start = max(0, size - TAIL_READ_BYTES)
+        starts_mid_line = False
+        if start > 0:
+            await f.seek(start - 1)
+            starts_mid_line = (await f.read(1)) != b"\n"
+        await f.seek(start)
+        chunk = (await f.read()).decode("utf-8", errors="ignore")
+    lines = chunk.splitlines()
+    if starts_mid_line and len(lines) > 1:
+        lines = lines[1:]
+    return lines[-MAX_TAIL_LINES:]
 
 
 # --- 健康检查与能力发现 ---
@@ -156,36 +177,47 @@ async def update_config_batch(
 
 
 @system.get("/logs")
-async def get_system_logs(levels: str | None = None, current_user: User = Depends(get_superadmin_user)):
-    """获取当前 API 进程日志。
+async def get_system_logs(
+    levels: str | None = None,
+    limit: int = Query(default=200, ge=1, le=MAX_LOG_LINES),
+    current_user: User = Depends(get_superadmin_user),
+):
+    """获取当前 API 进程日志，按尾部窗口分块返回。
 
     Args:
         levels: 可选的日志级别过滤，多个级别用逗号分隔，如 "INFO,ERROR,DEBUG,WARNING"
+        limit: 返回最近多少行，默认 200，最多 1000
     """
     try:
         level_filter = None
         if levels:
             level_filter = {level.strip().upper() for level in levels.split(",") if level.strip()}
 
-        # 只保留最后 1000 行，deque 超限自动淘汰最旧行
-        tail_lines: deque[str] = deque(maxlen=1000)
-        # 修复 GBK 编码报错：强制 utf-8 读取，忽略错误
-        async with aiofiles.open(LOG_FILE, encoding="utf-8", errors="ignore") as f:
-            async for line in f:
-                content = line.rstrip("\n\r")
-                if level_filter:
-                    # 日志格式: 2025-03-10 08:26:37,269 - INFO - module - message
-                    parts = content.split(" - ")
-                    if len(parts) < 2 or parts[1].strip() not in level_filter:
-                        continue
-                tail_lines.append(content + "\n")
+        lines = await _read_log_tail()
+        if level_filter:
+            # 日志格式: 2025-03-10 08:26:37,269 - INFO - module - message
+            lines = [line for line in lines if _log_level(line) in level_filter]
+        selected = lines[-limit:]
 
-        return {"log": "".join(tail_lines), "message": "success", "log_file": LOG_FILE, "scope": "api"}
+        return {
+            "log": "".join(line + "\n" for line in selected),
+            "message": "success",
+            "log_file": LOG_FILE,
+            "scope": "api",
+            "limit": limit,
+            "has_more": len(lines) > limit,
+        }
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"获取系统日志失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取系统日志失败: {str(e)}") from e
+
+
+def _log_level(line: str) -> str | None:
+    """提取日志行级别；格式不符时返回 None。"""
+    parts = line.split(" - ")
+    return parts[1].strip() if len(parts) >= 2 else None
 
 
 # --- 品牌信息 ---

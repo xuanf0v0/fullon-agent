@@ -124,3 +124,77 @@ def test_generic_option_endpoint_rejects_system_options():
     )
 
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_read_log_tail_returns_last_lines(monkeypatch, tmp_path):
+    """尾部读取返回窗口内的行，供上层过滤后截取。"""
+    log = tmp_path / "api.log"
+    log.write_text(
+        "\n".join(f"2026-01-01 00:00:00,000 - INFO - m - line {i}" for i in range(5000)),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(system_router, "LOG_FILE", str(log))
+
+    lines = await system_router._read_log_tail()
+
+    assert [line.rsplit(" ", 1)[-1] for line in lines[-3:]] == ["4997", "4998", "4999"]
+
+    # 缩小窗口后必须从文件中部开始读，证明不会扫描整文件
+    monkeypatch.setattr(system_router, "TAIL_READ_BYTES", 4096)
+    bounded = await system_router._read_log_tail()
+
+    assert bounded[0].startswith("2026-01-01 00:00:00,000 - INFO - m - line ")
+    assert int(bounded[0].rsplit(" ", 1)[-1]) > 0
+    assert bounded[-1].endswith("line 4999")
+
+    # 窗口内只有一条超长截断行时保留它，而不是返回空日志
+    huge = tmp_path / "huge.log"
+    huge.write_text("x" * 5000, encoding="utf-8")
+    monkeypatch.setattr(system_router, "LOG_FILE", str(huge))
+    truncated = await system_router._read_log_tail()
+
+    assert len(truncated) == 1
+    assert len(truncated[0]) == 4096
+
+
+def test_logs_endpoint_chunks_by_limit(monkeypatch, tmp_path):
+    """limit 控制返回行数，非法值由 FastAPI 校验拒绝。"""
+    log = tmp_path / "api.log"
+    log.write_text(
+        "\n".join(f"2026-01-01 00:00:00,000 - INFO - m - line {i}" for i in range(500)),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(system_router, "LOG_FILE", str(log))
+    app = FastAPI()
+    app.include_router(system, prefix="/api")
+    app.dependency_overrides[get_superadmin_user] = lambda: SimpleNamespace(username="admin")
+    client = TestClient(app)
+
+    response = client.get("/api/system/logs?limit=3")
+
+    assert response.status_code == 200
+    lines = response.json()["log"].strip().splitlines()
+    assert len(lines) == 3
+    assert lines[-1].endswith("line 499")
+    assert response.json()["limit"] == 3
+    assert response.json()["has_more"] is True
+    assert client.get("/api/system/logs?limit=0").status_code == 422
+    assert client.get("/api/system/logs?limit=1001").status_code == 422
+    default = client.get("/api/system/logs").json()
+    assert default["limit"] == 200
+    assert len(default["log"].strip().splitlines()) == 200
+    assert default["has_more"] is True
+    assert client.get("/api/system/logs?limit=1000").json()["has_more"] is False
+
+    # 级别过滤先执行，再按 limit 截取尾部
+    log.write_text(
+        "\n".join(
+            part
+            for i in range(10)
+            for part in (f"traceback continuation {i}", f"2026-01-01 00:00:00,000 - INFO - m - line {i}")
+        ),
+        encoding="utf-8",
+    )
+    filtered = client.get("/api/system/logs?levels=INFO&limit=3").json()["log"].strip().splitlines()
+    assert [line.rsplit(" ", 1)[-1] for line in filtered] == ["7", "8", "9"]
