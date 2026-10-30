@@ -767,6 +767,21 @@ async def get_document_content(kb_id: str, doc_id: str, current_user: User = Dep
         return {"message": "Failed to get file content", "status": "failed"}
 
 
+@knowledge.get("/knowledge-bases/{kb_id}/documents/{doc_id}/text")
+async def get_document_text(
+    kb_id: str,
+    doc_id: str,
+    max_bytes: int = Query(65536, ge=1024, le=262144, description="注入文本的最大 UTF-8 字节数"),
+    current_user: User = Depends(require_knowledge_base_read),
+):
+    """读取文档解析正文，供聊天引用注入本轮消息。"""
+    await _ensure_knowledge_base_supports_documents(kb_id, "文档引用")
+    try:
+        return await knowledge_base_manager.read_document_text(kb_id, doc_id, max_bytes=max_bytes)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @knowledge.delete("/knowledge-bases/{kb_id}/documents/batch")
 async def batch_delete_documents(kb_id: str, file_ids: list[str] = Body(...), current_user: User = Depends(require_knowledge_base_manage)):
     """批量删除文档或文件夹"""

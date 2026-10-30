@@ -25,12 +25,15 @@ test('首次发送在创建 Thread 前冻结附件、图片和配置，后来草
     isLoadingMessages: { value: false }, isWaitingForUserAction: { value: false },
     currentPendingThreadAttachments: files, currentModelSpec: model, currentToolApprovalMode: approval,
     startSendCooldown() {}, selectedModelByThread: {}, promoteDraftSelection() {},
+    message: { error() {} }, resolveKnowledgeInjection: async (text) => text,
     ensureActiveThread: () => new Promise((resolve) => { resolveCreation = resolve }),
     sessionInput: { async send(threadId, draft) { submitted = { threadId, draft } } }
   }
   const send = workspaceLogic('const handleSendMessage =', 'const handleDirectSteer =', dependencies, 'handleSendMessage')
   const sending = send({ images })
   assert.equal(dependencies.userInput.value, '', '移到底部前清空冻结文本，避免多行编辑器二次收缩')
+  // 知识库文件引用解析是发送前的异步步骤；冻结仍在创建 Thread 之前完成。
+  await Promise.resolve()
   files.value.push({ id: 'next-draft-file' })
   images.push({ imageUrl: 'next-draft-image' })
   model.value = 'next:model'
@@ -85,7 +88,8 @@ test('首条发送创建失败或未获得线程时恢复冻结文本和图片�
         return null
       },
       agentInputAreaRef: ref({ restoreImages: (images) => { restoredImages = images } }),
-      message: { error: () => { errors++ } }
+      message: { error: () => { errors++ } },
+      resolveKnowledgeInjection: async (text) => text
     }
     const send = workspaceLogic('const handleSendMessage =', 'const handleDirectSteer =', dependencies, 'handleSendMessage')
     await send({ images: [{ imageUrl: 'original-image' }] })
@@ -95,6 +99,30 @@ test('首条发送创建失败或未获得线程时恢复冻结文本和图片�
   }
 })
 
+
+test('重试复用首次冻结的注入文本，restoreText 保留原始引用', async () => {
+  const originalText = '请总结\n\n[知识库文件: a.md]\n```markdown\n正文\n```'
+  const originalRef = '@kb-file:"kb_1/file_1/a.md"'
+  const sent = []
+  const dependencies = {
+    pendingSends: ref({ thread: { text: originalText, restoreText: originalRef, images: [] } }),
+    currentChatId: ref('thread'),
+    userInput: ref(''),
+    agentExecutionAvailable: ref(true), sendCooldownActive: ref(false), props: {},
+    isLoadingMessages: ref(false), isWaitingForUserAction: ref(false),
+    currentPendingThreadAttachments: ref([]), currentModelSpec: ref(null), currentToolApprovalMode: ref('default'),
+    startSendCooldown() {},
+    sessionInput: { async send(threadId, draft, options) { sent.push({ threadId, draft, options }); return true } },
+    message: { error() {} },
+    resolveKnowledgeInjection: async () => { throw new Error('重试不应重新注入') }
+  }
+  const send = workspaceLogic('const handleSendMessage =', 'const handleDirectSteer =', dependencies, 'handleSendMessage')
+
+  assert.equal(await send({ retry: true }), true)
+  assert.equal(sent[0].options.retry, true)
+  assert.equal(sent[0].draft.text, originalText)
+  assert.equal(sent[0].draft.restoreText, originalRef)
+})
 
 for (const uploadTarget of ['__draft__', 'thread-a']) {
   test(`创建响应丢失后重放审批模式，附件目标 ${uploadTarget} 按归属迁移`, async () => {

@@ -33,6 +33,8 @@ function setupSender() {
     currentModelSpec: ref('model'),
     currentToolApprovalMode: ref('request'),
     startSendCooldown() {},
+    message: { error() {} },
+    resolveKnowledgeInjection: async (text) => text,
     sessionInput: {
       async send(thread, draft, options) {
         sent.push({ thread, draft, options })

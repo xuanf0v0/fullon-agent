@@ -377,6 +377,15 @@ class KnowledgeExecutor(ABC):
 
     async def open_file_content(self, kb_id: str, file_id: str, offset: int = 0, limit: int = 800) -> dict:
         """按行窗口打开文件解析后的 Markdown 内容"""
+        content = await self._load_markdown_content(kb_id, file_id)
+        return self._build_open_file_window(content, offset=offset, limit=limit)
+
+    async def read_file_markdown(self, kb_id: str, file_id: str) -> str:
+        """读取文件解析后的完整 Markdown 正文。"""
+        return await self._load_markdown_content(kb_id, file_id)
+
+    async def _load_markdown_content(self, kb_id: str, file_id: str) -> str:
+        """校验文件可读并返回解析 Markdown；窗口、查找与引用共用同一读取路径。"""
         try:
             file_meta = await self._load_file_meta(kb_id, file_id)
         except ValueError as exc:
@@ -388,8 +397,7 @@ class KnowledgeExecutor(ABC):
         if not markdown_file:
             raise ValueError(f"文件 {file_id} 没有解析后的 Markdown 内容")
 
-        content = await self._read_markdown_from_minio(markdown_file)
-        return self._build_open_file_window(content, offset=offset, limit=limit)
+        return await self._read_markdown_from_minio(markdown_file)
 
     async def find_file_content(
         self,
@@ -403,18 +411,7 @@ class KnowledgeExecutor(ABC):
         window_size: int = 80,
     ) -> dict:
         """在解析后的 Markdown 中按关键词或正则查找上下文窗口。"""
-        try:
-            file_meta = await self._load_file_meta(kb_id, file_id)
-        except ValueError as exc:
-            raise ValueError(f"文件不存在: {file_id}") from exc
-        if file_meta.get("is_folder"):
-            raise ValueError(f"文件 {file_id} 是文件夹")
-
-        markdown_file = file_meta.get("markdown_file")
-        if not markdown_file:
-            raise ValueError(f"文件 {file_id} 没有解析后的 Markdown 内容")
-
-        content = await self._read_markdown_from_minio(markdown_file)
+        content = await self._load_markdown_content(kb_id, file_id)
         return self._build_find_file_windows(
             content,
             patterns=patterns,

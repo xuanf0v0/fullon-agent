@@ -111,6 +111,14 @@ export const documentApi = {
     )
   },
 
+  /** 读取文档解析正文，供聊天引用注入本轮消息。 */
+  readText: async (kbId, docId, maxBytes = 65536) => {
+    const query = buildQuery({ max_bytes: maxBytes })
+    return apiAdminGet(
+      `/api/knowledge/knowledge-bases/${kbId}/documents/${encodeURIComponent(docId)}/text?${query}`
+    )
+  },
+
   /**
    * 检查知识库中是否存在指定文件名或相对路径
    * @param {string} kbId - 知识库ID

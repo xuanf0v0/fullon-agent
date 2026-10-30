@@ -1,4 +1,4 @@
-import { BookOpen, Bot, Plug, WandSparkles } from '@lucide/vue'
+import { BookOpen, Bot, FileText, Plug, WandSparkles } from '@lucide/vue'
 import { getSkillIcon } from '../../../shared/lib/skill_icon_utils.js'
 
 export const MENTION_ICON_SIZE = 15
@@ -8,6 +8,7 @@ export const MENTION_ICON_STROKE_WIDTH = 2.2
 const MENTION_TYPE_ICON_COMPONENTS = {
   agent: Bot,
   knowledge: BookOpen,
+  'kb-file': FileText,
   skill: WandSparkles,
   mcp: Plug
 }

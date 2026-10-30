@@ -862,6 +862,23 @@ class KnowledgeBaseManager:
         kb_instance = await self.get_kb_executor(kb_id)
         return await kb_instance.get_file_download(kb_id, file_id, variant)
 
+    async def read_document_text(self, kb_id: str, file_id: str, *, max_bytes: int = 65536) -> dict:
+        """读取文档解析正文并按 UTF-8 字节上限截断，供聊天引用注入。"""
+        await self._require_kb_supports_documents(kb_id, "read")
+        kb_instance = await self.get_kb_executor(kb_id)
+        content = await kb_instance.read_file_markdown(kb_id, file_id)
+        raw = content.encode("utf-8")
+        truncated = len(raw) > max_bytes
+        text = raw[:max_bytes].decode("utf-8", "ignore") if truncated else content
+        meta = (await kb_instance.get_file_basic_info(kb_id, file_id)).get("meta", {})
+        return {
+            "file_id": file_id,
+            "filename": meta.get("filename") or file_id,
+            "text": text,
+            "truncated": truncated,
+            "bytes": len(text.encode("utf-8")),
+        }
+
     # ==== 检索与文档工具入口 ====
 
     async def aquery(self, query_text: str, kb_id: str, **kwargs) -> list[dict[str, Any]]:

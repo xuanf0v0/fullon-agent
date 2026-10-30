@@ -766,6 +766,7 @@ import HumanApprovalModal from '@/modules/session/ui/HumanApprovalModal.vue'
 import { useApproval } from '@/modules/session/model/useApproval'
 import { IDLE_QUEUE_SNAPSHOT } from '@/modules/session/model/useAgentThreadState'
 import { createSessionInput, createInputRequestId } from '@/modules/session/model/sessionInput'
+import { resolveKnowledgeInjection } from '@/modules/session/model/knowledge_injection'
 import { useSessionRuntimeStore } from '@/modules/session/model/sessionRuntime'
 import { resumeSessionWaitpoint } from '@/modules/session/model/sessionCommands'
 import { useSessionCooperation } from '@/modules/session/model/useSessionCooperation'
@@ -885,8 +886,8 @@ const promotingInputIds = reactive(new Set())
 let sendCooldownTimer = null
 // 预设的打招呼文本
 const greetingMessages = [
-  '语析，Natural Language Processing',
-  '语析，与知识对话',
+  'fullon，Natural Language Processing',
+  'fullon，与知识对话',
   '答案藏在知识里，我来找',
   '与知识对话，与答案相遇',
   '你负责提问，我负责寻找'
@@ -2599,7 +2600,8 @@ const selectThreadFromRoute = async (threadId) => {
 const sessionInput = createSessionInput({
   runtime: sessionRuntime,
   onPrepared: (_threadId, draft) => {
-    if (!draft.fromWidget && userInput.value.trim() === draft.text) userInput.value = ''
+    if (!draft.fromWidget && userInput.value.trim() === (draft.restoreText ?? draft.text))
+      userInput.value = ''
     if (approvalState.threadId === _threadId) hideApprovalState()
     void nextTick(() => scrollController.scrollToBottom(true))
   },
@@ -2624,7 +2626,9 @@ const sessionInput = createSessionInput({
   },
   onRejected: async (threadId, draft, error, { accepted, restore }) => {
     if (restore && !draft.fromWidget && currentChatId.value === threadId) {
-      userInput.value = [draft.text, userInput.value].filter(Boolean).join('\n')
+      userInput.value = [draft.restoreText ?? draft.text, userInput.value]
+        .filter(Boolean)
+        .join('\n')
       agentInputAreaRef.value?.restoreImages?.(draft.images)
     }
     if (isRunInterruptedConflict(error)) {
@@ -2660,9 +2664,10 @@ const handleSendMessage = async ({
 } = {}) => {
   const original = pendingSends.value[currentChatId.value]
   if ((original && !retry) || (retry && !original)) return false
-  const text = original?.text ?? submittedText ?? userInput.value.trim()
+  const submitted = original?.text ?? submittedText ?? userInput.value.trim()
+  const rawText = original?.restoreText ?? submitted
   if (
-    (!text && !images.length && !original?.images.length) ||
+    (!submitted && !images.length && !original?.images.length) ||
     !agentExecutionAvailable.value ||
     sendCooldownActive.value ||
     props.sendDisabled ||
@@ -2670,11 +2675,34 @@ const handleSendMessage = async ({
     isWaitingForUserAction.value
   )
     return false
+  // 先同步清空冻结文本，避免多行编辑器二次收缩；注入失败再恢复草稿。
+  const consumeDraft = !fromWidget && userInput.value.trim() === submitted
+  if (consumeDraft) userInput.value = ''
+  // 先进入发送冷却，防止引用解析期间的重复提交创建第二个 Thread。
   startSendCooldown()
+  // 引用知识库文件时取回解析正文；失败恢复草稿并释放冷却。
+  let text = submitted
+  if (!original) {
+    try {
+      text = await resolveKnowledgeInjection(rawText)
+    } catch (error) {
+      if (consumeDraft) {
+        userInput.value = [rawText, userInput.value].filter(Boolean).join('\n')
+      }
+      sendCooldownActive.value = false
+      if (sendCooldownTimer) {
+        clearTimeout(sendCooldownTimer)
+        sendCooldownTimer = null
+      }
+      message.error(error.message || '知识库文件引用失败')
+      return false
+    }
+  }
   let threadId = currentChatId.value
   const createdFromDraft = !threadId
   const draft = {
     text,
+    restoreText: rawText,
     images: images.map((image) => ({ ...image })),
     createdFromDraft,
     fromWidget,
@@ -2687,14 +2715,12 @@ const handleSendMessage = async ({
     mode
   }
   if (!threadId) {
-    const consumeDraft = !fromWidget && userInput.value.trim() === text
-    if (consumeDraft) userInput.value = ''
     try {
       threadId = await ensureActiveThread()
       if (!threadId) throw new Error('创建对话未返回线程')
     } catch {
       if (consumeDraft) {
-        userInput.value = [draft.text, userInput.value].filter(Boolean).join('\n')
+        userInput.value = [rawText, userInput.value].filter(Boolean).join('\n')
         agentInputAreaRef.value?.restoreImages?.(draft.images)
       }
       message.error('创建对话失败，请重试')

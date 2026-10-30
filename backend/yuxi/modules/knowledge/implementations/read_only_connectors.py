@@ -97,6 +97,10 @@ class ReadOnlyConnectors(KnowledgeExecutor):
         del offset, limit
         raise self._readonly_error()
 
+    async def read_file_markdown(self, kb_id: str, file_id: str) -> str:
+        del kb_id, file_id
+        raise self._readonly_error()
+
     async def find_file_content(
         self,
         kb_id: str,

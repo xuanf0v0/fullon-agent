@@ -103,6 +103,11 @@ export const getMentionDisplayLabel = (type, value, displayLabels = {}) => {
     const normalizedPath = String(value ?? '').replace(/\/+$/, '')
     return getDisplayFileName(normalizedPath || value, '文件')
   }
+  if (type === 'kb-file') {
+    // token 值为 <kb_id>/<file_id>/<文件名>，展示名取最后一段。
+    const fileName = String(value ?? '').split('/').slice(2).join('/')
+    return getDisplayFileName(fileName || value, '知识库文件')
+  }
   return String(value ?? '').trim() || type
 }
 

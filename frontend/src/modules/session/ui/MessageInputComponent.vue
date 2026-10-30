@@ -256,6 +256,32 @@
           </div>
         </div>
 
+        <!-- 知识库文件列表 -->
+        <div v-if="mentionItems.kbFiles.length > 0" class="mention-group">
+          <div class="mention-group-title">知识库文件</div>
+          <div
+            v-for="(item, index) in mentionItems.kbFiles"
+            :key="'kb-file-' + item.value"
+            :class="['mention-item', 'file-item', { active: isItemSelected('kb-file', index) }]"
+            @click="insertMention(item)"
+          >
+            <div class="file-info-left">
+              <FileTypeIcon :name="item.label" :size="16" class="file-type-icon" />
+              <span class="file-name" :title="item.label">
+                <span
+                  v-for="(part, pIdx) in splitTextByQuery(item.label, mentionQuery)"
+                  :key="pIdx"
+                  :class="{ 'query-match': part.isMatch }"
+                  >{{ part.text }}</span
+                >
+              </span>
+            </div>
+            <span v-if="item.description" class="file-parent-dir" :title="item.description">
+              {{ item.description }}
+            </span>
+          </div>
+        </div>
+
         <!-- 无结果 -->
         <div v-if="!hasAnyItems" class="mention-empty">暂无可引用的项</div>
       </div>
@@ -306,6 +332,7 @@ import {
   Send as SendOutlined
 } from '@lucide/vue'
 import { searchMentionFiles } from '@/apis/mention_api'
+import { documentApi } from '@/apis'
 import FileTypeIcon from '@/shared/ui/FileTypeIcon.vue'
 import ActionTrigger from '@/shared/ui/ActionTrigger.vue'
 import MentionToken from '@/modules/session/ui/MentionToken.vue'
@@ -392,6 +419,50 @@ const mentionEnabled = computed(() => {
 
 const mentionDisplayLabels = computed(() => buildMentionDisplayLabels(props.mention || {}))
 const mentionResourceItems = computed(() => buildMentionResourceItems(props.mention || {}))
+const selectedKnowledgeBaseIds = computed(() =>
+  [...new Set(
+    (mentionResourceItems.value.knowledgeBases || [])
+      .map((item) => item.resourceId)
+      .filter(Boolean)
+  )]
+)
+
+const toKnowledgeFileItem = (file) => {
+  const filename = String(file?.filename || '')
+  const value = [file?.kb_id, file?.file_id, filename].join('/')
+  return {
+    value,
+    label: filename,
+    type: 'kb-file',
+    insertValue: value,
+    tokenLabel: formatMentionToken('kb-file', value),
+    description: file?.kb_name || file?.kb_id || ''
+  }
+}
+
+/** 在已选知识库中按文件名搜索；请求与结果按最新序号接收，失败只丢弃该来源。 */
+const scheduleKnowledgeFileSearch = (query) => {
+  clearTimeout(kbSearchTimer)
+  const requestId = ++kbSearchRequestId.value
+  const kbIds = selectedKnowledgeBaseIds.value
+  if (!query || !kbIds.length) {
+    mentionItems.value.kbFiles = []
+    return
+  }
+  kbSearchTimer = setTimeout(async () => {
+    const settled = await Promise.allSettled(
+      kbIds.map((kbId) => documentApi.searchDocuments(kbId, { query, offset: 0, limit: 8 }))
+    )
+    if (requestId !== kbSearchRequestId.value) return
+    const files = settled.flatMap((result) =>
+      result.status === 'fulfilled' ? result.value?.files || [] : []
+    )
+    files.sort((left, right) =>
+      String(right.updated_at || '').localeCompare(String(left.updated_at || ''))
+    )
+    mentionItems.value.kbFiles = files.slice(0, 20).map(toKnowledgeFileItem)
+  }, 250)
+}
 
 let lastRawSelectionRange = null
 let lastSyncedEditorValue = props.modelValue || ''
@@ -776,7 +847,16 @@ const updateMentionItems = (query = '') => {
   }
 
   if (!props.mention) {
-    mentionItems.value = { files: [], knowledgeBases: [], mcps: [], skills: [], agents: [] }
+    clearTimeout(kbSearchTimer)
+    kbSearchRequestId.value += 1
+    mentionItems.value = {
+      files: [],
+      knowledgeBases: [],
+      mcps: [],
+      skills: [],
+      agents: [],
+      kbFiles: []
+    }
     return
   }
 
@@ -829,7 +909,8 @@ const updateMentionItems = (query = '') => {
     knowledgeBases: filterItems(knowledgeItems),
     mcps: filterItems(mcpItems),
     skills: filterItems(skillItems),
-    agents: filterItems(agentItems)
+    agents: filterItems(agentItems),
+    kbFiles: []
   }
 
   if (normalizedQuery) {
@@ -894,6 +975,8 @@ const updateMentionItems = (query = '') => {
       }
     }, 250) // 250ms 经典防抖时间
   }
+
+  scheduleKnowledgeFileSearch(normalizedQuery)
 }
 
 // 检查项是否被选中
@@ -905,6 +988,7 @@ const isItemSelected = (type, index) => {
   const kbLen = mentionItems.value.knowledgeBases.length
   const mcpLen = mentionItems.value.mcps.length
   const skillsLen = mentionItems.value.skills.length
+  const agentsLen = mentionItems.value.agents.length
 
   if (type === 'file') {
     return selectedIndex === index
@@ -916,6 +1000,8 @@ const isItemSelected = (type, index) => {
     return selectedIndex === filesLen + kbLen + mcpLen + index
   } else if (type === 'agent') {
     return selectedIndex === filesLen + kbLen + mcpLen + skillsLen + index
+  } else if (type === 'kb-file') {
+    return selectedIndex === filesLen + kbLen + mcpLen + skillsLen + agentsLen + index
   }
   return false
 }
@@ -934,7 +1020,8 @@ const hasAnyItems = computed(() => {
     items.knowledgeBases.length > 0 ||
     items.mcps.length > 0 ||
     items.skills.length > 0 ||
-    items.agents.length > 0
+    items.agents.length > 0 ||
+    items.kbFiles.length > 0
   )
 })
 
@@ -1010,7 +1097,8 @@ const handleMentionNavigation = (e) => {
     ...mentionItems.value.knowledgeBases,
     ...mentionItems.value.mcps,
     ...mentionItems.value.skills,
-    ...mentionItems.value.agents
+    ...mentionItems.value.agents,
+    ...mentionItems.value.kbFiles
   ]
 
   const total = allItems.length
@@ -1268,12 +1356,21 @@ const handleSendOrStop = () => {
 // @ 提及功能状态
 const mentionPopupVisible = ref(false)
 const mentionQuery = ref('')
-const mentionItems = ref({ files: [], knowledgeBases: [], mcps: [], skills: [], agents: [] })
+const mentionItems = ref({
+  files: [],
+  knowledgeBases: [],
+  mcps: [],
+  skills: [],
+  agents: [],
+  kbFiles: []
+})
 const mentionSelectedIndex = ref(0)
 const searchRequestId = ref(0)
+const kbSearchRequestId = ref(0)
 const isComposing = ref(false)
 let activeAbortController = null
 let mentionSearchTimer = null
+let kbSearchTimer = null
 
 const adjustTextareaHeight = () => {
   if (!inputRef.value) {

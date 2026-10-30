@@ -571,3 +571,62 @@ async def test_graph_worker_rejects_incomplete_file_scope(monkeypatch, scope):
     with pytest.raises(ValueError, match="范围无效"):
         await knowledge_job_service.run_knowledge_graph(FakeBackgroundJobContext({"kb_id": "kb", **scope}))
     service.build_pending_chunks.assert_not_awaited()
+
+
+async def test_document_text_endpoint_returns_parsed_markdown(monkeypatch):
+    captured = {}
+
+    async def fake_ensure_knowledge_base_supports_documents(kb_id: str, operation: str) -> None:
+        captured["ensure"] = (kb_id, operation)
+
+    async def fake_read_document_text(kb_id: str, doc_id: str, *, max_bytes: int) -> dict:
+        captured["read"] = (kb_id, doc_id, max_bytes)
+        return {
+            "file_id": doc_id,
+            "filename": "报告.md",
+            "text": "正文",
+            "truncated": False,
+            "bytes": 6,
+        }
+
+    monkeypatch.setattr(
+        knowledge_router,
+        "_ensure_knowledge_base_supports_documents",
+        fake_ensure_knowledge_base_supports_documents,
+    )
+    monkeypatch.setattr(
+        knowledge_router.knowledge_base_manager, "read_document_text", fake_read_document_text
+    )
+
+    result = await knowledge_router.get_document_text(
+        kb_id="kb_1", doc_id="doc_1", max_bytes=65536, current_user=SimpleNamespace()
+    )
+
+    assert captured == {"ensure": ("kb_1", "文档引用"), "read": ("kb_1", "doc_1", 65536)}
+    assert result["text"] == "正文"
+    assert result["truncated"] is False
+
+
+async def test_document_text_endpoint_maps_unparsed_file_to_400(monkeypatch):
+    async def fake_ensure_knowledge_base_supports_documents(kb_id: str, operation: str) -> None:
+        return None
+
+    async def fake_read_document_text(kb_id: str, doc_id: str, *, max_bytes: int) -> dict:
+        raise ValueError("文件 doc_1 没有解析后的 Markdown 内容")
+
+    monkeypatch.setattr(
+        knowledge_router,
+        "_ensure_knowledge_base_supports_documents",
+        fake_ensure_knowledge_base_supports_documents,
+    )
+    monkeypatch.setattr(
+        knowledge_router.knowledge_base_manager, "read_document_text", fake_read_document_text
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await knowledge_router.get_document_text(
+            kb_id="kb_1", doc_id="doc_1", max_bytes=65536, current_user=SimpleNamespace()
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "没有解析后的 Markdown 内容" in exc_info.value.detail

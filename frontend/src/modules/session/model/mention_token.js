@@ -1,5 +1,6 @@
 export const mentionTypePrefixMap = {
   file: 'file',
+  'kb-file': 'kb-file',
   knowledge: 'knowledge',
   mcp: 'mcp',
   skill: 'skill',
