@@ -970,3 +970,70 @@ async def test_committed_response_survives_following_save_prune(test_client, adm
         assert (await current_content(slug)).joinpath("SKILL.md").read_text().endswith(" following")
     finally:
         await engine.dispose()
+
+
+async def test_bound_skill_create_accepts_draft_content_and_keeps_existing(test_client, admin_headers):
+    """AI 草稿随创建写入，已绑定时幂等返回且不覆盖既有内容。"""
+    agent_slug = f"pytest_bound_ai_{uuid.uuid4().hex[:10]}"
+    created = await test_client.post("/api/agent", headers=admin_headers, json={"name": "AI 专属", "slug": agent_slug})
+    assert created.status_code == 200, created.text
+    skill_slug = None
+    try:
+        content = (
+            "---\nslug: weekly-report\nname: 周报助手\ndescription: 用户要求整理周报时使用\n---\n\n"
+            "# 步骤\n\n1. 读取数据。\n"
+        )
+        first = await test_client.post(f"/api/agent/{agent_slug}/self-skill", headers=admin_headers, json={"content": content})
+        assert first.status_code == 200, first.text
+        skill_slug = first.json()["skill"]["slug"]
+        assert first.json()["skill"]["name"] == "周报助手"
+
+        file = await test_client.get(f"/api/system/skills/{skill_slug}/file?path=SKILL.md", headers=admin_headers)
+        assert file.status_code == 200, file.text
+        saved = file.json()["data"]["content"]
+        assert "用户要求整理周报时使用" in saved
+        assert f"slug: {skill_slug}" in saved
+
+        second = await test_client.post(
+            f"/api/agent/{agent_slug}/self-skill",
+            headers=admin_headers,
+            json={"content": "---\nslug: other\nname: 覆盖\nversion: 1\n---\n"},
+        )
+        assert second.status_code == 200, second.text
+        assert second.json()["skill"]["slug"] == skill_slug
+        assert "用户要求整理周报时使用" in (
+            await test_client.get(f"/api/system/skills/{skill_slug}/file?path=SKILL.md", headers=admin_headers)
+        ).json()["data"]["content"]
+    finally:
+        deleted = await test_client.delete(f"/api/agent/{agent_slug}", headers=admin_headers)
+        assert deleted.status_code in {200, 404}, deleted.text
+
+
+async def test_bound_skill_rejects_invalid_draft_before_binding(test_client, admin_headers, standard_user):
+    """缺 frontmatter 或声明依赖的草稿被拒绝，且不留下绑定。"""
+    agent_slug = f"pytest_bound_bad_{uuid.uuid4().hex[:10]}"
+    created = await test_client.post("/api/agent", headers=admin_headers, json={"name": "坏草稿", "slug": agent_slug})
+    assert created.status_code == 200, created.text
+    try:
+        for content in (
+            "# 没有 frontmatter",
+            "---\nslug: x\nname: X\ndescription: d\ntool_dependencies: [web_search]\n---\n",
+        ):
+            rejected = await test_client.post(
+                f"/api/agent/{agent_slug}/self-skill",
+                headers=admin_headers,
+                json={"content": content},
+            )
+            assert rejected.status_code == 422, rejected.text
+        absent = await test_client.get(f"/api/agent/{agent_slug}/self-skill", headers=admin_headers)
+        assert absent.json()["skill"] is None
+
+        forbidden = await test_client.post(
+            f"/api/agent/{agent_slug}/self-skill/generate",
+            headers=standard_user["headers"],
+            json={"purpose": "周报"},
+        )
+        assert forbidden.status_code == 403, forbidden.text
+    finally:
+        deleted = await test_client.delete(f"/api/agent/{agent_slug}", headers=admin_headers)
+        assert deleted.status_code in {200, 404}, deleted.text

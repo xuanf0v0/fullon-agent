@@ -1,10 +1,14 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { BookOpen, Plus, RefreshCw } from '@lucide/vue'
+import { BookOpen, Plus, RefreshCw, Sparkles } from '@lucide/vue'
 import { agentApi } from '@/apis/agent_api'
 import { skillApi } from '@/apis/skill_api'
 import MarkdownPreview from '@/modules/workspace/ui/MarkdownPreview.vue'
+import {
+  buildBoundSkillDraftPayload,
+  validateBoundSkillDraftForm
+} from '@/modules/agents/model/boundSkillDraft'
 
 const props = defineProps({ agentSlug: { type: String, required: true } })
 const emit = defineEmits(['navigate', 'busy'])
@@ -14,6 +18,16 @@ const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
 const fileInput = ref(null)
+const generateOpen = ref(false)
+const generating = ref(false)
+const savingDraft = ref(false)
+const draft = ref(null)
+const draftForm = reactive({
+  purpose: '',
+  triggers: '',
+  inputsOutputs: '',
+  tools: []
+})
 
 async function load() {
   loading.value = true
@@ -92,6 +106,63 @@ function openDetail() {
   })
 }
 
+function openGenerate() {
+  draft.value = null
+  generateOpen.value = true
+}
+
+function closeGenerate() {
+  if (generating.value || savingDraft.value) return
+  generateOpen.value = false
+}
+
+async function generateDraft() {
+  const invalid = validateBoundSkillDraftForm(draftForm)
+  if (invalid) {
+    message.warning(invalid)
+    return
+  }
+  generating.value = true
+  try {
+    draft.value = await agentApi.generateAgentBoundSkill(
+      props.agentSlug,
+      buildBoundSkillDraftPayload(draftForm)
+    )
+  } catch (cause) {
+    message.error(
+      cause.status === 502
+        ? '生成失败：请确认快速模型可用后重试'
+        : cause.message || '生成失败，请稍后重试'
+    )
+  } finally {
+    generating.value = false
+  }
+}
+
+async function saveDraft() {
+  if (!draft.value || savingDraft.value) return
+  savingDraft.value = true
+  emit('busy', true)
+  try {
+    binding.value = await agentApi.createAgentBoundSkill(props.agentSlug, {
+      content: draft.value.content
+    })
+    generateOpen.value = false
+    draft.value = null
+    await load()
+    message.success('专属 Skill 已保存')
+  } catch (cause) {
+    message.error(cause.message || '保存失败；请刷新后重试')
+  } finally {
+    savingDraft.value = false
+    emit('busy', false)
+  }
+}
+
+function regenerate() {
+  draft.value = null
+}
+
 onMounted(load)
 </script>
 
@@ -122,15 +193,79 @@ onMounted(load)
         <BookOpen :size="28" :stroke-width="1.4" class="empty-icon" aria-hidden="true" />
         <p>尚未添加专属 Skill</p>
         <div v-if="binding?.can_manage" class="empty-actions">
+          <a-button type="primary" :disabled="saving" @click="openGenerate">
+            <template #icon><Sparkles :size="14" /></template>
+            AI 生成
+          </a-button>
           <a-button :loading="saving" @click="create">
             <template #icon><Plus :size="14" /></template>
-            创建 Skill
+            创建模板
           </a-button>
           <a-button type="text" :disabled="saving" @click="fileInput.click()">导入 ZIP</a-button>
         </div>
       </div>
       <input v-if="binding?.can_manage && !binding.skill" ref="fileInput" type="file" accept=".zip" hidden @change="selectPackage" />
     </template>
+
+    <a-modal
+      v-model:open="generateOpen"
+      title="AI 生成专属 Skill"
+      :width="760"
+      :footer="null"
+      :closable="!generating && !savingDraft"
+      :mask-closable="!generating && !savingDraft"
+      :keyboard="!generating && !savingDraft"
+      @cancel="closeGenerate"
+    >
+      <p class="draft-hint">
+        描述用途后生成草稿；草稿不会自动保存，确认内容后再保存为专属 Skill。
+      </p>
+      <div class="draft-form">
+        <label>用途 <span class="required">*</span></label>
+        <a-textarea
+          v-model:value="draftForm.purpose"
+          :rows="3"
+          :maxlength="2000"
+          show-count
+          placeholder="例如：每周把销售 CSV 汇总成带图表的周报"
+        />
+        <label>触发场景</label>
+        <a-textarea
+          v-model:value="draftForm.triggers"
+          :rows="2"
+          :maxlength="1000"
+          placeholder="例如：用户提到周报、销售汇总、环比"
+        />
+        <label>输入与输出</label>
+        <a-textarea
+          v-model:value="draftForm.inputsOutputs"
+          :rows="2"
+          :maxlength="1000"
+          placeholder="例如：输入 CSV 文件，输出 Markdown 周报和图表"
+        />
+        <label>依赖工具</label>
+        <a-select
+          v-model:value="draftForm.tools"
+          mode="tags"
+          :max-tag-count="6"
+          :token-separators="[',', '，']"
+          placeholder="可选，如 web_search、mysql_query"
+        />
+      </div>
+      <div v-if="draft" class="draft-preview" aria-label="Skill 草稿预览">
+        <MarkdownPreview :content="draft.content" compact />
+      </div>
+      <div class="draft-actions">
+        <template v-if="!draft">
+          <a-button :disabled="generating" @click="closeGenerate">取消</a-button>
+          <a-button type="primary" :loading="generating" @click="generateDraft">生成草稿</a-button>
+        </template>
+        <template v-else>
+          <a-button :disabled="savingDraft" @click="regenerate">重新生成</a-button>
+          <a-button type="primary" :loading="savingDraft" @click="saveDraft">保存为专属 Skill</a-button>
+        </template>
+      </div>
+    </a-modal>
   </section>
 </template>
 
@@ -193,6 +328,37 @@ p {
 }
 .bound-skill-preview {
   overflow-wrap: anywhere;
+}
+.draft-hint {
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+.draft-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  label {
+    font-size: 13px;
+    color: var(--color-text);
+  }
+
+  .required {
+    color: var(--color-error-700);
+  }
+}
+.draft-preview {
+  max-height: 46vh;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--gray-100);
+  border-radius: 8px;
+}
+.draft-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
 }
 @media (max-width: 600px) {
   .bound-skill-header {

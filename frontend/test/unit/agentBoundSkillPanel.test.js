@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import test from 'node:test'
 import { compileScript, parse } from 'vue/compiler-sfc'
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 
 test('专属 Skill 加载失败可重试，首次导入不传修订且冲突保留当前绑定', async () => {
   const source = await fs.readFile(
@@ -19,6 +19,7 @@ test('专属 Skill 加载失败可重试，首次导入不传修订且冲突保�
   const navigations = []
   const busyStates = []
   const deps = {
+    reactive,
     ref,
     MarkdownPreview: {},
     skillApi: {

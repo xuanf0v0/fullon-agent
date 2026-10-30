@@ -20,7 +20,11 @@ export const agentApi = {
 
   getAgentBoundSkill: (slug) => apiGet(`/api/agent/${encodeURIComponent(slug)}/self-skill`),
 
-  createAgentBoundSkill: (slug) => apiPost(`/api/agent/${encodeURIComponent(slug)}/self-skill`),
+  createAgentBoundSkill: (slug, payload) =>
+    apiPost(`/api/agent/${encodeURIComponent(slug)}/self-skill`, payload),
+
+  generateAgentBoundSkill: (slug, payload) =>
+    apiPost(`/api/agent/${encodeURIComponent(slug)}/self-skill/generate`, payload),
 
   uploadAgentBoundSkill: (slug, file) => {
     const body = new FormData()

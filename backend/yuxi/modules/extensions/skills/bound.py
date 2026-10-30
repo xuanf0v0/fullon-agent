@@ -13,6 +13,7 @@ from yuxi.modules.agents.models.definitions import Agent
 from yuxi.modules.agents.permissions import user_can_access_agent, user_can_manage_agent
 from yuxi.modules.extensions.skills.access import get_skills_root_dir
 from yuxi.modules.extensions.skills.content import commit_skill_content, content_path
+from yuxi.modules.extensions.skills.generation import normalize_skill_draft
 from yuxi.modules.extensions.skills.install_draft import prepared_uploaded_skill
 from yuxi.modules.extensions.skills.models import Skill
 from yuxi.modules.extensions.skills.package import SkillEditConflict, parse_skill_dir_metadata
@@ -39,28 +40,39 @@ async def get_agent_bound_skill(db: AsyncSession, *, agent_slug: str, operator: 
     return await describe_bound_skill(item, operator)
 
 
-async def create_agent_bound_skill(db: AsyncSession, *, agent_slug: str, operator: User) -> dict:
-    """幂等创建最小操作指南，Agent 行锁串行化绑定写入。"""
+async def create_agent_bound_skill(
+    db: AsyncSession,
+    *,
+    agent_slug: str,
+    operator: User,
+    content: str | None = None,
+) -> dict:
+    """幂等创建专属 Skill：可选 AI 草稿，缺省为最小操作指南。"""
     agent, operator = await lock_manageable_agent(db, agent_slug, operator)
     existing = await SkillRepository(db).get_by_bound_agent_id(agent.id, for_update=True)
     if existing is not None:
         return await describe_bound_skill(existing, operator)
-    slug = "agent-guide"
-    root = get_skills_root_dir()
-    staging = root / f".bound-{uuid.uuid4().hex}.tmp"
-    staging.mkdir()
-    try:
+    source_slug = "agent-guide"
+    if content is None:
         content = (
             "---\n"
             + yaml.safe_dump(
-                {"slug": slug, "name": f"{agent.name} 操作指南", "description": "智能体专属操作指南与资源"},
+                {"slug": source_slug, "name": f"{agent.name} 操作指南", "description": "智能体专属操作指南与资源"},
                 allow_unicode=True,
                 sort_keys=False,
             )
             + "---\n\n# 操作指南\n\n在此记录操作流程；角色与回答风格在系统提示词中配置。\n"
         )
+    else:
+        draft = normalize_skill_draft(content)
+        content = draft["content"]
+        source_slug = draft["slug"]
+    root = get_skills_root_dir()
+    staging = root / f".bound-{uuid.uuid4().hex}.tmp"
+    staging.mkdir()
+    try:
         (staging / "SKILL.md").write_text(content, encoding="utf-8")
-        return await publish_bound_skill(db, agent=agent, operator=operator, source=staging, source_slug=slug)
+        return await publish_bound_skill(db, agent=agent, operator=operator, source=staging, source_slug=source_slug)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 

@@ -439,7 +439,7 @@ test('专属 Skill mutation 等待时父级不关闭保存切换或打开，结�
     .replace(/^import[\s\S]*?from '[^']+'\n/gm, '').replace('export default', 'return')
   let rejectUpload
   const panelDeps = {
-    ref, onMounted() {}, MarkdownPreview: {}, Modal: {},
+    reactive, ref, onMounted() {}, MarkdownPreview: {}, Modal: {},
     message: { error() {}, success() {} }, skillApi: {},
     agentApi: { uploadAgentBoundSkill: () => new Promise((_, reject) => { rejectUpload = reject }) }
   }

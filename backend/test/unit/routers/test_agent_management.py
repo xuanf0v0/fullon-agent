@@ -143,3 +143,36 @@ def test_normal_user_can_create_agent(monkeypatch):
         "read_scope": {"access_level": "global"},
         "manage_scope": None,
     }
+
+
+def test_self_skill_generate_maps_generation_error(monkeypatch):
+    async def fake_generate(*args, **kwargs):
+        raise agent_router_module.SkillDraftGenerationError("模型不可用")
+
+    monkeypatch.setattr(agent_router_module, "generate_bound_skill_draft", fake_generate)
+    client = _build_app(monkeypatch, _ListRepo)
+
+    response = client.post("/api/agent/chatbot/self-skill/generate", json={"purpose": "周报"})
+
+    assert response.status_code == 502
+    assert "模型不可用" in response.json()["detail"]
+
+
+def test_self_skill_create_passes_generated_content(monkeypatch):
+    captured = {}
+
+    async def fake_create(_db, *, agent_slug, operator, content=None):
+        captured.update(agent_slug=agent_slug, content=content)
+        return {"skill": {"slug": "self-test"}, "revision": "r", "can_manage": True}
+
+    monkeypatch.setattr(agent_router_module, "create_agent_bound_skill", fake_create)
+    client = _build_app(monkeypatch, _ListRepo)
+
+    response = client.post(
+        "/api/agent/chatbot/self-skill",
+        json={"content": "---\nslug: x\nname: X\ndescription: d\n---\n"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert captured == {"agent_slug": "chatbot", "content": "---\nslug: x\nname: X\ndescription: d\n---\n"}
+    assert client.post("/api/agent/chatbot/self-skill", json={"content": "x", "extra": 1}).status_code == 422

@@ -2,8 +2,8 @@
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel, ConfigDict, ValidationError
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yuxi.api.dependencies.auth import get_db, get_required_user, get_superadmin_user
@@ -30,6 +30,7 @@ from yuxi.modules.extensions.skills.bound import (
     get_agent_bound_skill,
     upload_agent_bound_skill,
 )
+from yuxi.modules.extensions.skills.generation import SkillDraftGenerationError, generate_bound_skill_draft
 from yuxi.modules.extensions.skills.package import SkillEditConflict
 from yuxi.modules.identity.models import User
 
@@ -59,6 +60,19 @@ class AgentUpdate(BaseModel):
     pics: list[str] | None = None
     config_json: dict | None = None
     share_config: dict | None = None
+
+
+class BoundSkillCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str | None = Field(default=None, min_length=1, max_length=65536)
+
+
+class BoundSkillGenerate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    purpose: str = Field(min_length=1, max_length=2000)
+    triggers: str | None = Field(default=None, max_length=1000)
+    inputs_outputs: str | None = Field(default=None, max_length=1000)
+    tools: list[str] = Field(default_factory=list, max_length=20)
 
 
 @agent_router.get("/backends")
@@ -234,12 +248,49 @@ async def get_self_skill(agent_id: str, current_user: User = Depends(get_require
 
 
 @agent_router.post("/{agent_id}/self-skill")
-async def create_self_skill(agent_id: str, current_user: User = Depends(get_required_user), db: AsyncSession = Depends(get_db)):
-    """按 Agent 管理权限幂等创建操作指南。"""
+async def create_self_skill(
+    agent_id: str,
+    payload: BoundSkillCreate | None = Body(default=None),
+    current_user: User = Depends(get_required_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """按 Agent 管理权限幂等创建专属 Skill；可选 AI 草稿内容。"""
     try:
-        return await create_agent_bound_skill(db, agent_slug=agent_id, operator=current_user)
+        return await create_agent_bound_skill(
+            db,
+            agent_slug=agent_id,
+            operator=current_user,
+            content=payload.content if payload else None,
+        )
+    except SkillEditConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@agent_router.post("/{agent_id}/self-skill/generate")
+async def generate_self_skill(
+    agent_id: str,
+    payload: BoundSkillGenerate,
+    current_user: User = Depends(get_required_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """生成专属 Skill 草稿，只返回预览，不保存。"""
+    try:
+        return await generate_bound_skill_draft(
+            db,
+            agent_slug=agent_id,
+            operator=current_user,
+            **payload.model_dump(),
+        )
+    except SkillEditConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except SkillDraftGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
