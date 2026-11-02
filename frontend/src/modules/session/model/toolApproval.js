@@ -66,6 +66,9 @@ export const getToolApprovalSummary = (request) => {
   if (name === 'write_file' || name === 'edit_file') {
     return String(args.file_path || args.path || formatToolApprovalArgs(args))
   }
+  if (name === 'write_local_space_file' || name === 'delete_local_space_path') {
+    return String(args.path || formatToolApprovalArgs(args))
+  }
 
   return formatToolApprovalArgs(args).replace(/\s+/g, ' ').trim()
 }

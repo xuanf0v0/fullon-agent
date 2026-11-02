@@ -5,7 +5,7 @@ const http = require('node:http')
 const https = require('node:https')
 const path = require('node:path')
 const { URL } = require('node:url')
-const { samePath, isInside, resolveWithin } = require('./lib/local-files')
+const { samePath, isInside, resolveWithin, writeWithin, deleteWithin } = require('./lib/local-files')
 const { parseRequestPath, buildProxyTarget } = require('./lib/proxy')
 const { handleBrokerRequest } = require('./lib/local-broker')
 
@@ -349,14 +349,21 @@ function createLocalServer() {
       response.end('Forbidden')
       return
     }
-    if (pathname === '/local-files/list' || pathname === '/local-files/read') {
+    if (
+      pathname === '/local-files/list' ||
+      pathname === '/local-files/read' ||
+      pathname === '/local-files/write' ||
+      pathname === '/local-files/delete'
+    ) {
       handleBrokerRequest(request, response, {
         pathname,
         searchParams: new URL(request.url, `http://127.0.0.1:${LOCAL_PORT}`).searchParams,
         token: brokerToken,
         getRoot: () => allowedRoot,
         listDirectory: (root, parts) => listDirectory(allowedRootUid, root, parts),
-        readFile: (root, parts) => readFile(allowedRootUid, root, parts)
+        readFile: (root, parts) => readFile(allowedRootUid, root, parts),
+        writeFile: (root, parts, content) => writeWithin(root, parts, content),
+        deletePath: (root, parts) => deleteWithin(root, parts)
       }).catch(() => {
         if (!response.headersSent) response.writeHead(500)
         response.end('Internal Server Error')

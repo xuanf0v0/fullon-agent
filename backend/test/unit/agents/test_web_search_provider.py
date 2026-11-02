@@ -306,6 +306,8 @@ async def test_runtime_excludes_unconfigured_web_tools_and_binds_after_configura
         "mark_for_improvement",
         "list_local_space_files",
         "read_local_space_file",
+        "write_local_space_file",
+        "delete_local_space_path",
     }
     configured["keys"]["doubao"] = "new-doubao-key"
     configured["keys"]["deepseek"] = "new-deepseek-key"

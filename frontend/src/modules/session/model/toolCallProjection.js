@@ -35,7 +35,11 @@ export const TOOL_NAME_MAP = {
   mysql_list_tables: '查看数据库表',
   mysql_describe_table: '查看表结构',
   mysql_query: '执行SQL查询',
-  ask_user_question: '向用户提问'
+  ask_user_question: '向用户提问',
+  list_local_space_files: '浏览个人空间',
+  read_local_space_file: '读取个人空间文件',
+  write_local_space_file: '写入个人空间文件',
+  delete_local_space_path: '删除个人空间文件'
 }
 
 // Keep intentionally hidden tool calls centralized so group summaries and renderers stay consistent.

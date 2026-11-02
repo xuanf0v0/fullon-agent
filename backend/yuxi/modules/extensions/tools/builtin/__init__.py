@@ -3,7 +3,12 @@
 from yuxi.modules.extensions.tools.builtin import web_search  # noqa: F401
 from yuxi.modules.extensions.tools.builtin.ask_user_question import ask_user_question
 from yuxi.modules.extensions.tools.builtin.install_skill import install_skill
-from yuxi.modules.extensions.tools.builtin.local_space import list_local_space_files, read_local_space_file
+from yuxi.modules.extensions.tools.builtin.local_space import (
+    delete_local_space_path,
+    list_local_space_files,
+    read_local_space_file,
+    write_local_space_file,
+)
 from yuxi.modules.extensions.tools.builtin.mark_for_improvement import mark_for_improvement
 from yuxi.modules.extensions.tools.builtin.ocr_parse_file import ocr_parse_file
 from yuxi.modules.extensions.tools.builtin.present_artifacts import present_artifacts
@@ -14,15 +19,19 @@ BASE_TOOL_NAMES = (
     "mark_for_improvement",
     "list_local_space_files",
     "read_local_space_file",
+    "write_local_space_file",
+    "delete_local_space_path",
 )
 
 __all__ = [
     "BASE_TOOL_NAMES",
     "ask_user_question",
+    "delete_local_space_path",
     "install_skill",
     "list_local_space_files",
     "mark_for_improvement",
     "ocr_parse_file",
     "present_artifacts",
     "read_local_space_file",
+    "write_local_space_file",
 ]

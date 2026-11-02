@@ -7,6 +7,7 @@ import {
   isRunInterruptedConflict,
   isThreadWaitingForUserAction,
   isToolApprovalMode,
+  getToolApprovalSummary,
   resolveToolApprovalMode
 } from '../../src/modules/session/model/toolApproval.js'
 
@@ -82,4 +83,19 @@ test('tool approval modes and interrupt payloads follow their state contracts', 
     true
   )
   assert.equal(isRunInterruptedConflict(new Error('线程正在等待用户回答或审批')), false)
+})
+
+
+test('个人空间写删审批展示目标路径而不展示正文', () => {
+  assert.equal(
+    getToolApprovalSummary({
+      name: 'write_local_space_file',
+      args: { path: 'notes/today.md', content: 'secret body' }
+    }),
+    'notes/today.md'
+  )
+  assert.equal(
+    getToolApprovalSummary({ name: 'delete_local_space_path', args: { path: 'notes/today.md' } }),
+    'notes/today.md'
+  )
 })

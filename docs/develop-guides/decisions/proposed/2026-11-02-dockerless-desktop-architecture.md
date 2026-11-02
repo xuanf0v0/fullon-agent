@@ -75,7 +75,7 @@ Phase 1 已实施并验证，见 [Agent 读取桌面个人空间本地文件](..
 
 | 验收主张 | 失败面 | 语义 Owner | 直接证据 / 命令 | 负向案例 | 当前结果 |
 |---|---|---|---|---|---|
-| Phase 1 Agent 可读取授权根目录内文本 | token 错误、路径越界、断开后仍可读 | `backend/yuxi/modules/extensions/tools/builtin/local_space.py` | 真实 Electron + Compose 调用 `read_local_space_file` | 跨 uid、`..`、符号链接、断开后调用 | Passed |
+| Phase 1 Agent 可在授权根目录内读写文本 | token 错误、路径越界、断开后仍可读 | `backend/yuxi/modules/extensions/tools/builtin/local_space.py` | 真实 Electron + Compose 调用 `read_local_space_file` | 跨 uid、`..`、符号链接、断开后调用 | Passed |
 | Phase 1 授权只存在临时 Redis 记录 | token 写入数据库或日志 | `backend/yuxi/modules/workspace/local_broker.py` | 注册 API + Redis `GET` + 日志检查 | 非本机 URL、弱 token、撤销后读取 | Passed |
 | Phase 2 无 Compose 也能完成一条 Run | sidecar 崩溃后 Run 卡住 | `desktop/main.js` 与 sidecar supervisor | 停止 Compose，启动 sidecar，完成真实 Run | 进程退出、端口冲突、迁移失败 | Not run |
 | Phase 3 每个替换保留真实语义 | 单元测试通过但 worker/恢复失败 | 对应 repository 与 service | 真实 PostgreSQL、worker、HTTP 回归 | 双写失败、回滚开关失效 | Not run |

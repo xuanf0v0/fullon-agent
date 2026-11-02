@@ -13,7 +13,7 @@
       <p class="local-browser-hint">
         {{
           isDesktop
-            ? '连接后 Agent 可在你授权范围内只读访问这些文件；不会复制到服务端。'
+            ? '连接后 Agent 可在你授权范围内读写这些文件；写删默认需要你审批，文件不会复制到服务端。'
             : '浏览器模式仅支持浏览与预览；让 Agent 读取请使用桌面客户端。'
         }}
       </p>
@@ -28,9 +28,9 @@
             v-if="connection.kind === 'desktop'"
             class="local-browser-agent"
             :class="{ connected: agentAccess }"
-            :title="agentAccess ? 'Agent 可只读访问此目录' : 'Agent 本地访问未连接'"
+            :title="agentAccess ? 'Agent 可在授权范围内读写，写删默认需要审批' : 'Agent 本地访问未连接'"
           >
-            {{ agentAccess ? 'Agent 可读' : 'Agent 未连接' }}
+            {{ agentAccess ? 'Agent 可读写' : 'Agent 未连接' }}
           </span>
         </div>
         <div class="local-browser-actions">

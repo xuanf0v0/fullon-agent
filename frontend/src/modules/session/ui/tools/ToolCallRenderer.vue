@@ -56,6 +56,7 @@ const AskUserQuestionTool = createRenderer(() => import('./renderers/AskUserQues
 const ExecuteTool = createRenderer(() => import('./renderers/ExecuteTool.vue'))
 const OcrParseFileTool = createRenderer(() => import('./renderers/OcrParseFileTool.vue'))
 const RememberMemoryTool = createRenderer(() => import('./renderers/RememberMemoryTool.vue'))
+const DeleteLocalSpaceTool = createRenderer(() => import('./renderers/DeleteLocalSpaceTool.vue'))
 
 const props = defineProps({
   cooperationView: { type: Object, default: null },
@@ -105,7 +106,11 @@ const TOOL_RENDERERS = {
   tavily_search: WebSearchTool,
   doubao_search: WebSearchTool,
   text_to_img_qwen_image: ImageTool,
-  write_file: WriteFileTool
+  write_file: WriteFileTool,
+  list_local_space_files: ListDirectoryTool,
+  read_local_space_file: ReadFileTool,
+  write_local_space_file: WriteFileTool,
+  delete_local_space_path: DeleteLocalSpaceTool
 }
 
 const currentRenderer = computed(() =>

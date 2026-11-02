@@ -49,7 +49,7 @@ const imageResult = computed(() => {
   return getToolResultParts(getToolCallResultContent(props.toolCall)).some((part) => part.image)
 })
 
-const filePath = computed(() => parsedArgs.value.file_path || '')
+const filePath = computed(() => parsedArgs.value.file_path || parsedArgs.value.path || '')
 
 // 仅显示文件名，悬浮时通过 title 显示完整路径
 const fileName = computed(() => {

@@ -324,6 +324,8 @@ async def test_base_tools_are_registered_once_without_configuration_or_skill(run
         "mark_for_improvement",
         "list_local_space_files",
         "read_local_space_file",
+        "write_local_space_file",
+        "delete_local_space_path",
     ]
     context.tools = ["mark_for_improvement", "ask_user_question", "present_artifacts"]
     tools = await resolve_configured_runtime_tools(context)
@@ -332,6 +334,8 @@ async def test_base_tools_are_registered_once_without_configuration_or_skill(run
         "mark_for_improvement",
         "list_local_space_files",
         "read_local_space_file",
+        "write_local_space_file",
+        "delete_local_space_path",
         "present_artifacts",
     ]
 

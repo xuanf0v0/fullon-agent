@@ -90,3 +90,47 @@ def test_always_trust_mode_does_not_build_approval_middleware():
 def test_unknown_tool_approval_mode_is_rejected():
     with pytest.raises(ValueError, match="不支持的 tool_approval_mode"):
         normalize_tool_approval_mode("unknown")
+
+
+def test_local_space_write_interrupts_with_real_agent_middleware():
+    """实际构图确认个人空间写入在工具执行前产生审批中断。"""
+    from langchain.agents import create_agent
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+    from langchain_core.messages import AIMessage, HumanMessage
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from yuxi.modules.extensions.tools.builtin.local_space import write_local_space_file
+
+    class FakeModel(FakeMessagesListChatModel):
+        def bind_tools(self, *_args, **_kwargs):
+            return self
+
+    model = FakeModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "write_local_space_file",
+                        "args": {"path": "a.txt", "content": "x"},
+                        "id": "call-write",
+                    }
+                ],
+            )
+        ]
+    )
+    agent = create_agent(
+        model=model,
+        tools=[write_local_space_file],
+        middleware=[create_tool_approval_middleware("default")],
+        checkpointer=InMemorySaver(),
+    )
+
+    result = agent.invoke(
+        {"messages": [HumanMessage("write a file")]},
+        config={"configurable": {"thread_id": "local-space-approval"}},
+    )
+
+    interrupt = result["__interrupt__"][0]
+    assert interrupt.value["action_requests"][0]["name"] == "write_local_space_file"
+    assert interrupt.value["review_configs"][0]["allowed_decisions"] == ["approve", "reject"]

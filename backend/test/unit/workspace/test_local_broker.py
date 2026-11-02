@@ -72,7 +72,14 @@ class _Client:
         return False
 
     async def get(self, url, params=None, headers=None):
-        self.calls.append((url, params, headers))
+        self.calls.append(('GET', url, params, headers))
+        result = self.responses.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    async def post(self, url, json=None, headers=None):
+        self.calls.append(('POST', url, json, headers))
         result = self.responses.pop(0)
         if isinstance(result, Exception):
             raise result
@@ -96,11 +103,11 @@ async def test_broker_call_uses_next_url_and_never_leaks_token(monkeypatch):
     monkeypatch.setattr("yuxi.modules.extensions.tools.builtin.local_space.httpx.AsyncClient", lambda **_kwargs: client)
 
     assert await _call_broker("1", "list", "notes") == {"entries": []}
-    assert [call[0] for call in client.calls] == [
+    assert [call[1] for call in client.calls] == [
         "http://127.0.0.1:5175/local-files/list",
         "http://host.docker.internal:5175/local-files/list",
     ]
-    assert client.calls[1][2] == {"Authorization": f"Bearer {grant.token}"}
+    assert client.calls[1][3] == {"Authorization": f"Bearer {grant.token}"}
 
 
 @pytest.mark.asyncio
@@ -126,8 +133,14 @@ def test_local_space_tools_are_always_registered():
     from yuxi.modules.extensions.tools.registry import get_all_tool_instances
 
     names = {tool.name for tool in get_all_tool_instances()}
-    assert {"list_local_space_files", "read_local_space_file"} <= set(BASE_TOOL_NAMES)
-    assert {"list_local_space_files", "read_local_space_file"} <= names
+    expected = {
+        "list_local_space_files",
+        "read_local_space_file",
+        "write_local_space_file",
+        "delete_local_space_path",
+    }
+    assert expected <= set(BASE_TOOL_NAMES)
+    assert expected <= names
 
 
 @pytest.mark.asyncio
@@ -147,4 +160,60 @@ async def test_runtime_assembly_exposes_local_space_tools():
         skill_runtime_snapshot=None,
     )
     tools = await resolve_configured_runtime_tools(context)
-    assert {"list_local_space_files", "read_local_space_file"} <= {tool.name for tool in tools}
+    assert {
+        "list_local_space_files",
+        "read_local_space_file",
+        "write_local_space_file",
+        "delete_local_space_path",
+    } <= {tool.name for tool in tools}
+
+
+@pytest.mark.asyncio
+async def test_broker_write_uses_post_json_without_token_in_body(monkeypatch):
+    """写入走 POST JSON，token 只放在 Authorization 头。"""
+    grant = LocalBrokerGrant(urls=("http://127.0.0.1:5175",), token="a" * 32, folder_name="docs")
+    client = _Client([_Response(200, {"path": "notes/today.md", "size": 5})])
+
+    async def fake_grant(_uid):
+        return grant
+
+    monkeypatch.setattr("yuxi.modules.extensions.tools.builtin.local_space.get_local_broker_grant", fake_grant)
+    monkeypatch.setattr("yuxi.modules.extensions.tools.builtin.local_space.httpx.AsyncClient", lambda **_kwargs: client)
+
+    assert await _call_broker("1", "write", "notes/today.md", content="hello") == {
+        "path": "notes/today.md",
+        "size": 5,
+    }
+    method, url, payload, headers = client.calls[0]
+    assert (method, url) == ("POST", "http://127.0.0.1:5175/local-files/write")
+    assert payload == {"path": "notes/today.md", "content": "hello"}
+    assert headers == {"Authorization": f"Bearer {grant.token}"}
+    assert grant.token not in str(payload)
+
+
+def test_local_write_delete_require_approval():
+    """写删本地文件默认进入审批，always_trust 才由调用方显式关闭。"""
+    from yuxi.modules.agents.runtime.tool_approval import create_tool_approval_middleware
+
+    middleware = create_tool_approval_middleware("default")
+    assert {"write_local_space_file", "delete_local_space_path"} <= set(middleware.interrupt_on)
+    assert create_tool_approval_middleware("always_trust") is None
+
+
+@pytest.mark.asyncio
+async def test_write_and_delete_validate_before_network():
+    """工具在接触 broker 前拒绝空删除路径和超限写入。"""
+    from types import SimpleNamespace
+
+    from yuxi.modules.extensions.tools.builtin.local_space import (
+        delete_local_space_path,
+        write_local_space_file,
+    )
+
+    runtime = SimpleNamespace(context={"uid": "user"})
+    with pytest.raises(ValueError, match="不能删除个人空间根目录"):
+        await delete_local_space_path.ainvoke({"path": "", "runtime": runtime})
+    with pytest.raises(ValueError, match="不能超过 1 MiB"):
+        await write_local_space_file.ainvoke(
+            {"path": "big.txt", "content": "x" * (1024 * 1024 + 1), "runtime": runtime}
+        )

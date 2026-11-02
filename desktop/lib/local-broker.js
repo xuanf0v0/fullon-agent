@@ -2,6 +2,7 @@ const { timingSafeEqual } = require('node:crypto')
 const path = require('node:path')
 
 const MAX_TEXT_BYTES = 64 * 1024
+const MAX_WRITE_BYTES = 1024 * 1024
 const MAX_ENTRIES = 500
 
 function sendJson(response, status, body) {
@@ -42,6 +43,35 @@ async function handleList({ root, parts, listDirectory }) {
   }
 }
 
+function readJsonBody(request) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let size = 0
+    request.on('data', (chunk) => {
+      size += chunk.length
+      if (size > MAX_WRITE_BYTES + 64 * 1024) {
+        reject(new Error('request_too_large'))
+        request.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    request.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+      } catch {
+        reject(new Error('invalid_json'))
+      }
+    })
+    request.on('error', reject)
+  })
+}
+
+function requireString(value, name) {
+  if (typeof value !== 'string') throw new Error(`missing_${name}`)
+  return value
+}
+
 async function handleRead({ root, parts, readFile }) {
   if (!parts.length) throw new Error('缺少文件路径')
   const result = await readFile(root, parts)
@@ -68,9 +98,19 @@ async function handleRead({ root, parts, readFile }) {
  * 处理桌面客户端的只读文件代理请求；返回 false 表示不是该路由。
  * 调用方只允许本机及 Docker host-gateway 访问，token 按应用进程生成。
  */
-async function handleBrokerRequest(request, response, { pathname, searchParams, token, getRoot, listDirectory, readFile }) {
-  if (pathname !== '/local-files/list' && pathname !== '/local-files/read') return false
-  if (request.method !== 'GET') {
+async function handleBrokerRequest(
+  request,
+  response,
+  { pathname, searchParams, token, getRoot, listDirectory, readFile, writeFile, deletePath }
+) {
+  const readRoute = pathname === '/local-files/list' || pathname === '/local-files/read'
+  const writeRoute = pathname === '/local-files/write' || pathname === '/local-files/delete'
+  if (!readRoute && !writeRoute) return false
+  if (readRoute && request.method !== 'GET') {
+    sendJson(response, 405, { error: 'method_not_allowed' })
+    return true
+  }
+  if (writeRoute && request.method !== 'POST') {
     sendJson(response, 405, { error: 'method_not_allowed' })
     return true
   }
@@ -84,11 +124,22 @@ async function handleBrokerRequest(request, response, { pathname, searchParams, 
     return true
   }
   try {
-    const parts = pathParts(searchParams.get('path'))
-    const result =
-      pathname === '/local-files/list'
-        ? await handleList({ root, parts, listDirectory })
-        : await handleRead({ root, parts, readFile })
+    let result
+    if (pathname === '/local-files/list') {
+      result = await handleList({ root, parts: pathParts(searchParams.get('path')), listDirectory })
+    } else if (pathname === '/local-files/read') {
+      result = await handleRead({ root, parts: pathParts(searchParams.get('path')), readFile })
+    } else {
+      const body = await readJsonBody(request)
+      const parts = pathParts(requireString(body.path, 'path'))
+      if (pathname === '/local-files/write') {
+        const content = requireString(body.content, 'content')
+        if (Buffer.byteLength(content, 'utf8') > MAX_WRITE_BYTES) throw new Error('content_too_large')
+        result = await writeFile(root, parts, content)
+      } else {
+        result = await deletePath(root, parts)
+      }
+    }
     sendJson(response, 200, { ...result, folder: path.basename(root) || '本地文件夹' })
   } catch (error) {
     const status = error && error.code === 'ENOENT' ? 404 : 400

@@ -27,7 +27,7 @@ const props = defineProps({
 
 const parsedArgs = computed(() => parseToolCallArgs(props.toolCall))
 
-const filePath = computed(() => parsedArgs.value.file_path || '')
+const filePath = computed(() => parsedArgs.value.file_path || parsedArgs.value.path || '')
 const content = computed(() => parsedArgs.value.content || '')
 const lineCount = computed(() => {
   if (!content.value) return 0

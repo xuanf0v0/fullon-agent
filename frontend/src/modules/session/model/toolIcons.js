@@ -18,7 +18,8 @@ import {
   Globe,
   HelpCircle,
   Image,
-  SquareTerminal
+  SquareTerminal,
+  Trash2
 } from '@lucide/vue'
 
 export const TOOL_ICON_MAP = {
@@ -60,7 +61,11 @@ export const TOOL_ICON_MAP = {
   tavily_search: Globe,
   doubao_search: Globe,
   text_to_img_qwen_image: Image,
-  write_file: FileEdit
+  write_file: FileEdit,
+  list_local_space_files: Folder,
+  read_local_space_file: FileText,
+  write_local_space_file: FileEdit,
+  delete_local_space_path: Trash2
 }
 
 export const getToolIcon = (toolId) => TOOL_ICON_MAP[toolId] || null

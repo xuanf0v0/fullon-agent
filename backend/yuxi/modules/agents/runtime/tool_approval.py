@@ -33,6 +33,8 @@ def create_tool_approval_middleware(
         interrupt_on={
             "write_file": {"allowed_decisions": _ALLOWED_DECISIONS, "when": write_requires_approval},
             "edit_file": {"allowed_decisions": _ALLOWED_DECISIONS, "when": write_requires_approval},
+            "write_local_space_file": {"allowed_decisions": _ALLOWED_DECISIONS},
+            "delete_local_space_path": {"allowed_decisions": _ALLOWED_DECISIONS},
             "execute": {"allowed_decisions": _ALLOWED_DECISIONS},
         }
     )
