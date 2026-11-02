@@ -72,6 +72,10 @@ curl --fail http://localhost:5050/api/system/ready
 
 返回的 `status` 为 `ready` 后，打开 [http://localhost:5173](http://localhost:5173)，初始化超级管理员并登录。在智能体中执行创建 `hello.txt` 的任务，并在工作区核对文件内容；完整操作见[快速开始](docs/intro/quick-start.md)。API 文档位于 [http://localhost:5050/docs](http://localhost:5050/docs)。
 
+### 4. 桌面客户端（可选）
+
+需要直接浏览本机文件夹时，可使用 Electron 客户端；它复用上述 Docker 后端，不内置数据库与 worker。构建和运行方式见 [desktop/README.md](desktop/README.md)。
+
 ## 文档导航
 
 - [项目介绍](https://xerrors.github.io/Yuxi/intro/project-overview)：了解能力、概念和系统边界。

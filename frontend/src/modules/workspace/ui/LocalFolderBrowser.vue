@@ -82,7 +82,7 @@
           <img v-else-if="preview.url && preview.isImage" :src="preview.url" :alt="preview.name" />
           <pre v-else-if="preview.text !== null">{{ preview.text }}</pre>
           <div v-else class="local-browser-state">
-            该文件不支持预览。
+            {{ preview.message || '该文件不支持预览。' }}
             <a v-if="preview.url" :href="preview.url" :download="preview.name">下载</a>
           </div>
         </aside>
@@ -92,16 +92,17 @@
 </template>
 
 <script setup>
-import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ChevronRight, HardDrive, RefreshCw } from '@lucide/vue'
 import FileTypeIcon from '@/shared/ui/FileTypeIcon.vue'
 import {
   clearLocalFolderConnection,
+  forgetLocalFolder,
   loadLocalFolderConnection,
-  openLocalDirectory,
   pickLocalFolder,
   queryLocalPermission,
   readLocalDirectory,
+  readLocalFile,
   requestLocalPermission,
   saveLocalFolderConnection,
   supportsLocalFolder
@@ -125,7 +126,6 @@ let loadSeq = 0
 let previewSeq = 0
 let restoreSeq = 0
 
-const rootHandle = computed(() => connection.value?.handle)
 const formatSize = (bytes) => {
   if (bytes === undefined || bytes === null) return '-'
   if (bytes < 1024) return `${bytes} B`
@@ -152,19 +152,24 @@ function closePreview() {
 }
 
 async function loadDirectory() {
-  if (!rootHandle.value || permission.value !== 'granted') return
+  if (!connection.value || permission.value !== 'granted') return
   const seq = ++loadSeq
   loading.value = true
   error.value = ''
   try {
-    const directory = await openLocalDirectory(rootHandle.value, parts.value)
-    const nextEntries = await readLocalDirectory(directory)
+    const nextEntries = await readLocalDirectory(connection.value, parts.value)
     if (seq !== loadSeq) return
     entries.value = nextEntries
   } catch (err) {
     if (seq !== loadSeq) return
     entries.value = []
-    if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') permission.value = 'prompt'
+    if (
+      err?.name === 'NotAllowedError' ||
+      err?.name === 'SecurityError' ||
+      (connection.value?.kind === 'desktop' && /未授权/.test(err?.message || ''))
+    ) {
+      permission.value = 'prompt'
+    }
     error.value = err?.message || '读取本地目录失败'
   } finally {
     if (seq === loadSeq) loading.value = false
@@ -186,22 +191,20 @@ async function openPreview(entry) {
   const seq = previewSeq
   preview.value = { name: entry.name, loading: true, text: null, url: '', isImage: false }
   try {
-    const file = await entry.handle.getFile()
-    const isImage = file.type.startsWith('image/')
-    const isText = file.type.startsWith('text/') || /\.(md|txt|json|js|mjs|ts|tsx|vue|py|css|html|ya?ml|toml|ini|log|csv|sh)$/i.test(entry.name)
-    const nextUrl = isImage || !isText ? URL.createObjectURL(file) : ''
-    const nextText = isText ? await file.slice(0, 200_000).text() : null
+    const file = await readLocalFile(connection.value, [...parts.value, entry.name], entry.handle)
     if (seq !== previewSeq) {
-      if (nextUrl) URL.revokeObjectURL(nextUrl)
+      if (file.isObjectUrl && file.url) URL.revokeObjectURL(file.url)
       return
     }
-    previewUrl = nextUrl
+    if (file.isObjectUrl && file.url) previewUrl = file.url
     preview.value = {
       name: entry.name,
       loading: false,
-      isImage,
-      url: previewUrl,
-      text: nextText
+      isImage: Boolean(file.isImage),
+      url: file.url || '',
+      text: file.kind === 'text' ? file.text : null,
+      message: file.tooLarge ? '文件超过 20 MB，无法预览。' : '',
+      size: file.size
     }
   } catch (err) {
     if (seq !== previewSeq) return
@@ -215,14 +218,11 @@ async function connect() {
   busy.value = true
   error.value = ''
   try {
-    const handle = await pickLocalFolder()
-    permission.value = await requestLocalPermission(handle)
+    const selected = await pickLocalFolder(props.uid)
+    if (!selected) return
+    connection.value = await saveLocalFolderConnection({ uid: String(props.uid), ...selected })
+    permission.value = await requestLocalPermission(connection.value)
     if (permission.value !== 'granted') throw new Error('未获得本地文件夹读取权限')
-    connection.value = await saveLocalFolderConnection({
-      uid: String(props.uid),
-      folderName: handle.name,
-      handle
-    })
     parts.value = []
     closePreview()
     await loadDirectory()
@@ -234,10 +234,14 @@ async function connect() {
 }
 
 async function reauthorize() {
+  if (connection.value?.kind === 'desktop') {
+    await connect()
+    return
+  }
   busy.value = true
   error.value = ''
   try {
-    permission.value = await requestLocalPermission(connection.value.handle)
+    permission.value = await requestLocalPermission(connection.value)
     if (permission.value === 'granted') await loadDirectory()
   } catch (err) {
     error.value = err?.message || '授权失败'
@@ -249,11 +253,18 @@ async function reauthorize() {
 async function disconnect() {
   loadSeq += 1
   loading.value = false
+  let failure = ''
+  try {
+    await forgetLocalFolder(connection.value)
+  } catch (err) {
+    failure = err?.message || '撤销本地文件夹授权失败'
+  }
   try {
     await clearLocalFolderConnection(props.uid)
   } catch (err) {
-    error.value = err?.message || '清除本地文件夹记录失败'
+    failure ||= err?.message || '清除本地文件夹记录失败'
   }
+  if (failure) error.value = failure
   connection.value = null
   permission.value = ''
   entries.value = []
@@ -267,7 +278,7 @@ async function restore() {
   if (seq !== restoreSeq) return
   connection.value = saved
   if (!connection.value) return
-  permission.value = await queryLocalPermission(connection.value.handle)
+  permission.value = await queryLocalPermission(connection.value)
   if (seq === restoreSeq && permission.value === 'granted') await loadDirectory()
 }
 
@@ -288,12 +299,24 @@ onActivated(() => {
 
 watch(
   () => props.uid,
-  (uid) => {
-    if (!uid) return
+  async (uid, previousUid) => {
+    const previous = connection.value
+    if (
+      previous?.kind === 'desktop' &&
+      (!uid || String(previous.uid) !== String(uid))
+    ) {
+      try {
+        await forgetLocalFolder(previous)
+      } catch {
+        // 账号切换时以清空界面为准；主进程授权也会校验 uid。
+      }
+    }
     connection.value = null
+    permission.value = ''
     parts.value = []
     entries.value = []
     closePreview()
+    if (!uid || String(previousUid) === String(uid)) return
     restore().catch((err) => {
       error.value = err?.message || '读取本地文件夹配置失败'
     })

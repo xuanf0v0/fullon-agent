@@ -1,0 +1,63 @@
+{
+  "name": "fullon-desktop",
+  "version": "0.8.0-beta.5",
+  "private": true,
+  "description": "fullon 桌面客户端",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:renderer": "node scripts/build-renderer.mjs",
+    "pack": "node scripts/build-renderer.mjs && electron-builder --dir --win",
+    "dist": "node scripts/build-renderer.mjs && electron-builder --win zip",
+    "test": "node --test test/*.test.js",
+    "dist:nsis": "node scripts/build-renderer.mjs && electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^45.2.1",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "ai.fullon.desktop",
+    "productName": "fullon",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**/*",
+      "renderer/**/*",
+      "package.json",
+      "build/icon.ico"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "shortcutName": "fullon"
+    },
+    "electronDist": "node_modules/electron/dist",
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeCliInspectArguments": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "onlyLoadAppFromAsar": true
+    }
+  },
+  "author": "fullon",
+  "license": "MIT"
+}
