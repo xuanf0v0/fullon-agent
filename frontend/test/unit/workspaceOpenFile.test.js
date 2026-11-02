@@ -4,7 +4,7 @@ import test from 'node:test'
 import { computed, reactive, ref } from 'vue'
 import { compileScript, parse } from 'vue/compiler-sfc'
 
-const { descriptor } = parse(readFileSync(new URL('../../src/pages/WorkspaceView.vue', import.meta.url), 'utf8'))
+const { descriptor } = parse(readFileSync(new URL('../../src/pages/WorkspaceView.vue', import.meta.url), 'utf8').replace(/\r\n/g, '\n'))
 const compiled = compileScript(descriptor, { id: 'workspace-open-file' })
 const executable = compiled.content
   .replace(/^import[\s\S]*?from '[^']+'\n/gm, '').replace('export default', 'return')

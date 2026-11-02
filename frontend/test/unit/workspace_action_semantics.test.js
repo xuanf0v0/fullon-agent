@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 function readSource(relativePath) {
-  return readFileSync(new URL(relativePath, import.meta.url), 'utf8')
+  return readFileSync(new URL(relativePath, import.meta.url), 'utf8').replace(/\r\n/g, '\n')
 }
 
 test('工作区上传菜单暴露展开状态和菜单语义', () => {

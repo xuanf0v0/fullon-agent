@@ -12,26 +12,6 @@
           <template #icon><PanelLeft :size="16" /></template>
           {{ sidebarCollapsed ? '展开导航' : '收起导航' }}
         </a-button>
-        <a-button class="lucide-icon-btn" @click="fileSearchOpen = true">
-          <template #icon><Search :size="16" /></template>
-          搜索
-        </a-button>
-        <a-button
-          v-if="activeSourceKey === 'personal'"
-          class="lucide-icon-btn"
-          @click="localFolderOpen = true"
-        >
-          <template #icon><HardDrive :size="16" /></template>
-          本地文件夹
-        </a-button>
-        <a-button
-          v-if="isAgentsWorkspacePath"
-          class="lucide-icon-btn"
-          @click="openAgentsGuideModal"
-        >
-          <template #icon><CircleHelp :size="16" /></template>
-          使用说明
-        </a-button>
       </template>
     </PageHeader>
 
@@ -51,16 +31,6 @@
       @change="handleFolderUploadInputChange"
     />
 
-    <GlobalSearchModal
-      v-model:open="fileSearchOpen"
-      :modes="['file']"
-      default-mode="file"
-      :file-search="searchWorkspace"
-      file-placeholder="搜索个人空间文件..."
-      file-scope-hint="仅搜索个人空间，不包含知识库文件。"
-      @select-file="handleFileSearchSelect"
-    />
-
     <a-alert
       v-if="uploadError && activeSourceKey === 'personal'"
       class="upload-error"
@@ -71,20 +41,6 @@
       @close="uploadError = ''"
     />
 
-    <div
-      v-if="localFolderConnection && localFolderPermission !== 'granted'"
-      class="local-folder-banner"
-    >
-      <span>本地文件夹 <strong>{{ localFolderConnection.folderName }}</strong> 的权限已失效。</span>
-      <a-button size="small" type="primary" @click="localFolderOpen = true">重新授权</a-button>
-    </div>
-
-    <LocalFolderDialog
-      v-model:open="localFolderOpen"
-      :uid="String(userStore.uid || '')"
-      @synced="handleLocalFolderSynced"
-    />
-
     <div class="workspace-shell" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
       <div
         id="workspace-navigation"
@@ -93,8 +49,8 @@
         :aria-hidden="sidebarCollapsed"
       >
         <WorkspaceSidebar
+          :local-mode="activeSourceKey === 'personal'"
           :active-key="activeSourceKey"
-          :current-path="currentPath"
           :knowledge-bases="knowledgeBases"
           :loading-knowledge-bases="loadingKnowledgeBases"
           :current-uid="userStore.uid"
@@ -102,7 +58,6 @@
           :uploading="uploadingFile"
           @select-personal="selectPersonalWorkspace"
           @select-knowledge-base="selectKnowledgeBase"
-          @select-path="selectWorkspacePath"
           @upload-file="openUploadFilePicker"
           @upload-folder="openUploadFolderPicker"
           @create-directory="openCreateDirectoryModal"
@@ -113,11 +68,14 @@
         class="workspace-main"
         :class="{ 'is-inline-preview': showInlinePreview }"
       >
-        <template v-if="activeSourceKey === 'personal' || selectedKnowledgeBase">
+        <LocalFolderBrowser
+          v-if="activeSourceKey === 'personal'"
+          :uid="String(userStore.uid || '')"
+        />
+        <template v-else-if="selectedKnowledgeBase">
           <WorkspaceFileList
             :entries="entries"
-            :current-path="currentPath"
-            :selected-path="selectedEntry?.path || ''"
+              :selected-path="selectedEntry?.path || ''"
             :selected-paths="selectedPaths"
             :deleting-paths="deletingPaths"
             :selection-mode="selectionMode"
@@ -194,39 +152,7 @@
     </a-modal>
 
     <a-modal
-      v-model:open="agentsGuideModalVisible"
-      title="Agents 目录说明"
-      okText="我知道了"
-      :cancelButtonProps="{ style: { display: 'none' } }"
-      @ok="closeAgentsGuideModal"
-    >
-      <div class="agents-guide-content">
-        <p>
-          这个文件夹中的说明文件会在合适的时机注入到 Agent
-          的执行流程中，用来补充你的长期偏好、业务背景和协作要求。
-        </p>
-        <p>
-          目前支持 <code>AGENTS.md</code>、<code>USER.md</code> 和
-          <code>MEMORY.md</code>：其中内容会在每次会话中注入到 Agent
-          Prompt，分别适合写入行为约束、用户信息和希望 Agent 记住的信息。
-        </p>
-
-        <section class="agents-guide-section">
-          <h3>填写建议</h3>
-          <ul>
-            <li>写清常用工作背景，例如部门职责、常见任务、知识库使用方式。</li>
-            <li>写清回答偏好，例如语言风格、详略程度、是否优先给结论。</li>
-            <li>写清业务术语和固定称呼，帮助 Agent 保持表达一致。</li>
-            <li>写清资料使用要求，例如优先引用哪些知识库、哪些内容需要谨慎确认。</li>
-            <li>写清协作边界，例如不确定时先提问，涉及重要决策时先给方案再执行。</li>
-            <li>优先使用明确、可执行的规则，避免“尽量做好”这类模糊描述。</li>
-          </ul>
-        </section>
-      </div>
-    </a-modal>
-
-    <a-modal
-      :open="workspaceActive && previewModalVisible && !useInlinePreview"
+      :open="workspaceActive && previewModalVisible && !canInlinePreview"
       width="880px"
       :style="{ maxWidth: '92vw', top: '5vh' }"
       :bodyStyle="{ height: '82vh', maxHeight: '90vh', padding: '0', overflow: 'hidden' }"
@@ -257,10 +183,10 @@
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { CircleHelp, HardDrive, LibraryBig, PanelLeft, Search } from '@lucide/vue'
+import { LibraryBig, PanelLeft } from '@lucide/vue'
 import PageHeader from '@/shared/ui/PageHeader.vue'
 import AgentFilePreview from '@/modules/session/ui/workspace/AgentFilePreview.vue'
-import LocalFolderDialog from '@/modules/workspace/ui/LocalFolderDialog.vue'
+import LocalFolderBrowser from '@/modules/workspace/ui/LocalFolderBrowser.vue'
 import WorkspaceFileList from '@/modules/workspace/ui/WorkspaceFileList.vue'
 import WorkspacePreviewPane from '@/modules/workspace/ui/WorkspacePreviewPane.vue'
 import WorkspaceSidebar from '@/modules/workspace/ui/WorkspaceSidebar.vue'
@@ -271,12 +197,6 @@ import {
   traverseDirectoryEntry,
   validateFolderUploadEntries
 } from '@/modules/workspace'
-import {
-  LOCAL_SYNC_ROOT,
-  loadLocalFolderConnection,
-  queryLocalPermission,
-  supportsLocalFolder
-} from '@/modules/workspace/model/localFolderSync'
 import { knowledgeBaseApi } from '@/apis/knowledge_api'
 import { useUserStore } from '@/modules/identity/model/user'
 import {
@@ -289,10 +209,8 @@ import {
   getWorkspaceKnowledgeTree,
   getWorkspaceTree,
   saveWorkspaceFileContent,
-  searchWorkspaceFiles,
   uploadWorkspaceFiles
 } from '@/apis/workspace_api'
-import GlobalSearchModal from '@/modules/session/ui/GlobalSearchModal.vue'
 import { normalizePreviewResponse } from '@/shared/lib/file_preview'
 import { parseDownloadFilename } from '@/shared/lib/file_utils'
 
@@ -302,35 +220,6 @@ const router = useRouter()
 
 const activeSourceKey = ref('personal')
 const currentPath = ref('/')
-const fileSearchOpen = ref(false)
-const localFolderOpen = ref(false)
-const localFolderConnection = ref(null)
-const localFolderPermission = ref('')
-
-async function refreshLocalFolderState() {
-  const saved = await loadLocalFolderConnection(userStore.uid)
-  localFolderConnection.value = saved
-  localFolderPermission.value = saved ? await queryLocalPermission(saved.handle) : ''
-}
-
-async function handleLocalFolderSynced() {
-  await refreshLocalFolderState()
-  if (currentPath.value === '/' || currentPath.value.startsWith(`/${LOCAL_SYNC_ROOT}`)) {
-    await loadWorkspaceEntries(currentPath.value)
-  }
-}
-
-const searchWorkspace = (query) => searchWorkspaceFiles(query)
-
-// 搜索命中后切到文件所在目录并打开预览
-const handleFileSearchSelect = async (entry) => {
-  if (!entry?.path) return
-  const parentPath = entry.path.replace(/\/[^/]+$/, '') || '/'
-  await selectWorkspacePath(parentPath)
-  const matched = entries.value.find((item) => item.path === entry.path)
-  if (matched) await loadWorkspacePreview(matched)
-}
-
 // 侧边栏全局搜索选中工作区文件后，通过 query 跳转打开对应文件
 const openFileByPath = async (path) => {
   if (!path) return
@@ -366,7 +255,6 @@ const workspaceMainRef = ref(null)
 const workspaceMainWidth = ref(0)
 const workspaceActive = ref(true)
 const createDirectoryModalVisible = ref(false)
-const agentsGuideModalVisible = ref(false)
 const newDirectoryName = ref('')
 const creatingDirectory = ref(false)
 const uploadingFile = ref(false)
@@ -379,7 +267,6 @@ const previewWidthPercent = ref(50)
 const isPreviewResizing = ref(false)
 const previewRequestId = ref(0)
 const INLINE_PREVIEW_MIN_WIDTH = 960
-const AGENTS_WORKSPACE_PATH = '/agents'
 const knowledgeFileBrowser = reactive({
   parentId: null,
   page: 1,
@@ -398,11 +285,6 @@ const isSameOrChildPath = (path, targetPath) => {
     normalizedPath === normalizedTargetPath || normalizedPath.startsWith(`${normalizedTargetPath}/`)
   )
 }
-const isAgentsWorkspacePath = computed(
-  () =>
-    activeSourceKey.value === 'personal' &&
-    comparablePath(currentPath.value) === AGENTS_WORKSPACE_PATH
-)
 const isReadonlyWorkspacePath = computed(() => isKnowledgeSource.value)
 // 与侧边栏上传入口同一语义：仅个人空间非只读目录可上传，知识库只读。
 const personalUploadEnabled = computed(
@@ -413,8 +295,11 @@ const selectedPreviewPath = computed(() =>
     ? selectedEntry.value.name || ''
     : selectedEntry.value?.path || ''
 )
+const canInlinePreview = computed(
+  () => useInlinePreview.value && activeSourceKey.value !== 'personal'
+)
 const showInlinePreview = computed(
-  () => useInlinePreview.value && inlinePreviewVisible.value && Boolean(previewFile.value)
+  () => canInlinePreview.value && inlinePreviewVisible.value && Boolean(previewFile.value)
 )
 const workspacePreviewStyle = computed(() => ({
   width: `${previewWidthPercent.value}%`
@@ -477,8 +362,8 @@ const startPreviewRequest = (entry, baseFile = entry) => {
   selectedEntry.value = entry
   revokePreviewObjectUrl()
   previewFile.value = buildPreviewLoadingFile(entry, baseFile)
-  inlinePreviewVisible.value = true
-  previewModalVisible.value = !useInlinePreview.value
+  inlinePreviewVisible.value = canInlinePreview.value
+  previewModalVisible.value = !canInlinePreview.value
   loadingPreview.value = true
   return requestId
 }
@@ -658,16 +543,12 @@ const loadKnowledgeBases = async () => {
   }
 }
 
-const selectPersonalWorkspace = async () => {
-  const wasKnowledgeSource = isKnowledgeSource.value
+const selectPersonalWorkspace = () => {
   activeSourceKey.value = 'personal'
   selectedKnowledgeBase.value = null
   knowledgeBreadcrumbItems.value = []
   closePreview()
   clearWorkspaceSelection()
-  if (wasKnowledgeSource || currentPath.value !== '/' || !entries.value.length) {
-    await loadWorkspaceEntries('/')
-  }
 }
 
 const selectWorkspacePath = async (path) => {
@@ -767,7 +648,7 @@ const closePreview = () => {
   previewModalVisible.value = false
   inlinePreviewVisible.value = false
   loadingPreview.value = false
-  if (!useInlinePreview.value) {
+  if (!canInlinePreview.value) {
     selectedEntry.value = null
     previewFile.value = null
     revokePreviewObjectUrl()
@@ -812,14 +693,6 @@ const openCreateDirectoryModal = () => {
   if (activeSourceKey.value !== 'personal' || isReadonlyWorkspacePath.value) return
   newDirectoryName.value = ''
   createDirectoryModalVisible.value = true
-}
-
-const openAgentsGuideModal = () => {
-  agentsGuideModalVisible.value = true
-}
-
-const closeAgentsGuideModal = () => {
-  agentsGuideModalVisible.value = false
 }
 
 const createDirectory = async () => {
@@ -1130,19 +1003,9 @@ const startPreviewResize = (event) => {
 }
 
 let workspaceResizeObserver = null
-let workspaceMounted = false
 
 onMounted(async () => {
-  await Promise.all([loadWorkspaceEntries('/'), loadKnowledgeBases()])
-  await refreshLocalFolderState().catch(() => {})
-  if (
-    !localFolderConnection.value &&
-    supportsLocalFolder() &&
-    !sessionStorage.getItem('yuxi-local-folder-prompted')
-  ) {
-    sessionStorage.setItem('yuxi-local-folder-prompted', '1')
-    localFolderOpen.value = true
-  }
+  await loadKnowledgeBases()
 
   if (workspaceMainRef.value && typeof ResizeObserver !== 'undefined') {
     workspaceMainWidth.value = workspaceMainRef.value.clientWidth || 0
@@ -1156,21 +1019,11 @@ onMounted(async () => {
 
   // 侧边栏全局搜索跳转后打开指定文件
   await openFileByPath(route.query.open)
-  workspaceMounted = true
 })
 
-onActivated(async () => {
+onActivated(() => {
   workspaceMainWidth.value = workspaceMainRef.value?.clientWidth || 0
   workspaceActive.value = true
-  if (!workspaceMounted || activeSourceKey.value !== 'personal') return
-  await loadWorkspaceEntries(currentPath.value)
-  if (!selectedEntry.value?.path) return
-  const refreshedEntry = entries.value.find((entry) => entry.path === selectedEntry.value.path)
-  if (refreshedEntry) {
-    await loadWorkspacePreview(refreshedEntry)
-  } else {
-    closePreview()
-  }
 })
 
 onDeactivated(() => {
@@ -1192,7 +1045,7 @@ onUnmounted(() => {
   revokePreviewObjectUrl()
 })
 
-watch([useInlinePreview, workspaceActive], ([isInline, isActive]) => {
+watch([canInlinePreview, workspaceActive], ([isInline, isActive]) => {
   // KeepAlive 隐藏页面后的零宽度不代表用户切换到窄屏。
   if (!isActive) return
   if (!previewFile.value) {
@@ -1218,20 +1071,6 @@ watch([useInlinePreview, workspaceActive], ([isInline, isActive]) => {
 .upload-error {
   margin: 12px;
   overflow-wrap: anywhere;
-}
-
-.local-folder-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-warning-100);
-  border-radius: 8px;
-  background: var(--color-warning-50);
-  color: var(--gray-1000);
-  font-size: 13px;
 }
 
 .workspace-view {

@@ -4,7 +4,7 @@ import test from 'node:test'
 import { computed, effectScope, nextTick, reactive, ref, unref, watch } from 'vue'
 import { compileScript, parse } from 'vue/compiler-sfc'
 
-const source = readFileSync(new URL('../../src/pages/WorkspaceView.vue', import.meta.url), 'utf8')
+const source = readFileSync(new URL('../../src/pages/WorkspaceView.vue', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
 const { descriptor } = parse(source)
 const compiled = compileScript(descriptor, { id: 'workspace-preview-lifecycle' })
 const executable = compiled.content
@@ -44,6 +44,7 @@ function setupWorkspace(t, width) {
 
 test('侧栏预览离开缓存页面后不因零宽度变成弹窗，返回时恢复侧栏', async (t) => {
   const { state, hooks, view } = setupWorkspace(t, 1200)
+  state.activeSourceKey.value = 'knowledge-base:test-kb'
   state.startPreviewRequest({ path: '/agents/MEMORY.md', name: 'MEMORY.md' })
   await nextTick()
   assert.equal(view.showInlinePreview, true)
@@ -90,4 +91,22 @@ test('窄屏预览弹窗离开缓存页面后隐藏，返回仍保留选中文�
   await nextTick()
   assert.equal(isModalOpen(view), true)
   assert.equal(view.selectedPreviewPath, '/agents/MEMORY.md')
+})
+
+test('个人空间宽屏使用弹窗，关闭后切知识库不复活旧预览', async (t) => {
+  const { state, view } = setupWorkspace(t, 1200)
+  state.startPreviewRequest({ path: '/agents/MEMORY.md', name: 'MEMORY.md' })
+  await nextTick()
+  assert.equal(view.showInlinePreview, false)
+  assert.equal(isModalOpen(view), true)
+
+  state.closePreview()
+  await nextTick()
+  assert.equal(view.selectedPreviewPath, '')
+  assert.equal(view.previewFile, null)
+
+  state.activeSourceKey.value = 'knowledge-base:test-kb'
+  await nextTick()
+  assert.equal(isModalOpen(view), false)
+  assert.equal(view.showInlinePreview, false)
 })

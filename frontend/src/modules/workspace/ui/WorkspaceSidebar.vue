@@ -1,6 +1,6 @@
 <template>
   <aside class="workspace-sidebar" aria-label="空间导航">
-    <div class="sidebar-actions">
+    <div v-if="!localMode" class="sidebar-actions">
       <div ref="uploadActionMenuRef" class="file-action-dropdown">
         <button
           type="button"
@@ -54,39 +54,15 @@
       </div>
     </div>
 
-    <section class="sidebar-section">
+    <section v-if="!localMode" class="sidebar-section">
       <button
         type="button"
         class="workspace-nav-item"
-        :class="{ active: activeKey === 'personal' && !isQuickAccessPath(currentPath) }"
+        :class="{ active: activeKey === 'personal' }"
         @click="$emit('select-personal')"
       >
         <FileTypeIcon is-dir folder-variant="personal" :size="16" />
         <span>全部文件</span>
-      </button>
-    </section>
-
-    <section class="sidebar-section">
-      <div class="section-title">快速访问</div>
-      <button
-        type="button"
-        class="workspace-nav-item secondary"
-        :class="{ active: activeKey === 'personal' && isSamePath(currentPath, agentsPath) }"
-        @click="$emit('select-path', agentsPath)"
-      >
-        <FileTypeIcon is-dir :size="16" />
-        <span>智能体文件</span>
-      </button>
-      <button
-        type="button"
-        class="workspace-nav-item secondary"
-        :class="{
-          active: activeKey === 'personal' && isSamePath(currentPath, savedArtifactsPath)
-        }"
-        @click="$emit('select-path', savedArtifactsPath)"
-      >
-        <FileTypeIcon is-dir :size="16" />
-        <span>保存的产物</span>
       </button>
     </section>
 
@@ -135,34 +111,19 @@ import { ChevronDown, FolderPlus, FolderUp, Loader2, Upload } from '@lucide/vue'
 import FileTypeIcon from '@/shared/ui/FileTypeIcon.vue'
 import { useOutsidePointerdown } from '@/shared/lib/useOutsidePointerdown'
 
-const savedArtifactsPath = '/saved_artifacts'
-const agentsPath = '/agents/'
-const quickAccessPaths = [savedArtifactsPath, agentsPath]
-
-const normalizePath = (path) => String(path || '/').replace(/\/$/, '') || '/'
-const isSameOrChildPath = (path, targetPath) => {
-  const current = normalizePath(path)
-  const target = normalizePath(targetPath)
-  return current === target || current.startsWith(`${target}/`)
-}
-const isSamePath = (path, targetPath) => normalizePath(path) === normalizePath(targetPath)
-const isQuickAccessPath = (path) =>
-  quickAccessPaths.some((targetPath) => isSameOrChildPath(path, targetPath))
-
 const props = defineProps({
   activeKey: { type: String, default: 'personal' },
-  currentPath: { type: String, default: '/' },
   knowledgeBases: { type: Array, default: () => [] },
   loadingKnowledgeBases: { type: Boolean, default: false },
   currentUid: { type: String, default: '' },
   disabled: { type: Boolean, default: false },
-  uploading: { type: Boolean, default: false }
+  uploading: { type: Boolean, default: false },
+  localMode: { type: Boolean, default: false }
 })
 
 const emit = defineEmits([
   'select-personal',
   'select-knowledge-base',
-  'select-path',
   'upload-file',
   'upload-folder',
   'create-directory'
