@@ -17,6 +17,14 @@
           搜索
         </a-button>
         <a-button
+          v-if="activeSourceKey === 'personal'"
+          class="lucide-icon-btn"
+          @click="localFolderOpen = true"
+        >
+          <template #icon><HardDrive :size="16" /></template>
+          本地文件夹
+        </a-button>
+        <a-button
           v-if="isAgentsWorkspacePath"
           class="lucide-icon-btn"
           @click="openAgentsGuideModal"
@@ -61,6 +69,20 @@
       show-icon
       closable
       @close="uploadError = ''"
+    />
+
+    <div
+      v-if="localFolderConnection && localFolderPermission !== 'granted'"
+      class="local-folder-banner"
+    >
+      <span>本地文件夹 <strong>{{ localFolderConnection.folderName }}</strong> 的权限已失效。</span>
+      <a-button size="small" type="primary" @click="localFolderOpen = true">重新授权</a-button>
+    </div>
+
+    <LocalFolderDialog
+      v-model:open="localFolderOpen"
+      :uid="String(userStore.uid || '')"
+      @synced="handleLocalFolderSynced"
     />
 
     <div class="workspace-shell" :class="{ 'is-sidebar-collapsed': sidebarCollapsed }">
@@ -235,9 +257,10 @@
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { CircleHelp, LibraryBig, PanelLeft, Search } from '@lucide/vue'
+import { CircleHelp, HardDrive, LibraryBig, PanelLeft, Search } from '@lucide/vue'
 import PageHeader from '@/shared/ui/PageHeader.vue'
 import AgentFilePreview from '@/modules/session/ui/workspace/AgentFilePreview.vue'
+import LocalFolderDialog from '@/modules/workspace/ui/LocalFolderDialog.vue'
 import WorkspaceFileList from '@/modules/workspace/ui/WorkspaceFileList.vue'
 import WorkspacePreviewPane from '@/modules/workspace/ui/WorkspacePreviewPane.vue'
 import WorkspaceSidebar from '@/modules/workspace/ui/WorkspaceSidebar.vue'
@@ -248,6 +271,12 @@ import {
   traverseDirectoryEntry,
   validateFolderUploadEntries
 } from '@/modules/workspace'
+import {
+  LOCAL_SYNC_ROOT,
+  loadLocalFolderConnection,
+  queryLocalPermission,
+  supportsLocalFolder
+} from '@/modules/workspace/model/localFolderSync'
 import { knowledgeBaseApi } from '@/apis/knowledge_api'
 import { useUserStore } from '@/modules/identity/model/user'
 import {
@@ -274,6 +303,22 @@ const router = useRouter()
 const activeSourceKey = ref('personal')
 const currentPath = ref('/')
 const fileSearchOpen = ref(false)
+const localFolderOpen = ref(false)
+const localFolderConnection = ref(null)
+const localFolderPermission = ref('')
+
+async function refreshLocalFolderState() {
+  const saved = await loadLocalFolderConnection(userStore.uid)
+  localFolderConnection.value = saved
+  localFolderPermission.value = saved ? await queryLocalPermission(saved.handle) : ''
+}
+
+async function handleLocalFolderSynced() {
+  await refreshLocalFolderState()
+  if (currentPath.value === '/' || currentPath.value.startsWith(`/${LOCAL_SYNC_ROOT}`)) {
+    await loadWorkspaceEntries(currentPath.value)
+  }
+}
 
 const searchWorkspace = (query) => searchWorkspaceFiles(query)
 
@@ -1089,6 +1134,15 @@ let workspaceMounted = false
 
 onMounted(async () => {
   await Promise.all([loadWorkspaceEntries('/'), loadKnowledgeBases()])
+  await refreshLocalFolderState().catch(() => {})
+  if (
+    !localFolderConnection.value &&
+    supportsLocalFolder() &&
+    !sessionStorage.getItem('yuxi-local-folder-prompted')
+  ) {
+    sessionStorage.setItem('yuxi-local-folder-prompted', '1')
+    localFolderOpen.value = true
+  }
 
   if (workspaceMainRef.value && typeof ResizeObserver !== 'undefined') {
     workspaceMainWidth.value = workspaceMainRef.value.clientWidth || 0
@@ -1164,6 +1218,20 @@ watch([useInlinePreview, workspaceActive], ([isInline, isActive]) => {
 .upload-error {
   margin: 12px;
   overflow-wrap: anywhere;
+}
+
+.local-folder-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-warning-100);
+  border-radius: 8px;
+  background: var(--color-warning-50);
+  color: var(--gray-1000);
+  font-size: 13px;
 }
 
 .workspace-view {
