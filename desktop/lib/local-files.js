@@ -20,6 +20,7 @@ function assertName(name) {
     name === '..' ||
     name.includes('/') ||
     name.includes('\\') ||
+    name.includes(':') ||
     name.includes('\0')
   ) {
     throw new Error('非法文件路径')

@@ -76,3 +76,15 @@ export const downloadWorkspaceFile = (path) => {
 export const searchWorkspaceFiles = (query) => {
   return apiGet(`/api/workspace/search?${buildQuery({ query })}`)
 }
+
+export const getLocalFolderBroker = () => apiGet('/api/workspace/local-folder/broker')
+
+export const registerLocalFolderBroker = (urls, token, folderName) => {
+  return apiPut('/api/workspace/local-folder/broker', {
+    urls,
+    token,
+    folder_name: folderName
+  })
+}
+
+export const unregisterLocalFolderBroker = () => apiDelete('/api/workspace/local-folder/broker')

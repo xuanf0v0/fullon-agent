@@ -10,7 +10,13 @@
       <h2>连接本地文件夹</h2>
       <p>个人空间直接读取你电脑上的目录，不导入、不复制；每次进入或刷新都读取本地最新内容。</p>
       <a-button type="primary" :loading="busy" @click="connect">选择本地文件夹</a-button>
-      <p class="local-browser-hint">Agent 运行在服务端，无法读取这里的文件；当前支持浏览与预览。</p>
+      <p class="local-browser-hint">
+        {{
+          isDesktop
+            ? '连接后 Agent 可在你授权范围内只读访问这些文件；不会复制到服务端。'
+            : '浏览器模式仅支持浏览与预览；让 Agent 读取请使用桌面客户端。'
+        }}
+      </p>
     </div>
 
     <template v-else>
@@ -18,6 +24,14 @@
         <div class="local-browser-title">
           <HardDrive :size="18" />
           <strong>{{ connection.folderName || '本地文件夹' }}</strong>
+          <span
+            v-if="connection.kind === 'desktop'"
+            class="local-browser-agent"
+            :class="{ connected: agentAccess }"
+            :title="agentAccess ? 'Agent 可只读访问此目录' : 'Agent 本地访问未连接'"
+          >
+            {{ agentAccess ? 'Agent 可读' : 'Agent 未连接' }}
+          </span>
         </div>
         <div class="local-browser-actions">
           <a-button size="small" :loading="busy" @click="refresh">
@@ -98,6 +112,7 @@ import FileTypeIcon from '@/shared/ui/FileTypeIcon.vue'
 import {
   clearLocalFolderConnection,
   forgetLocalFolder,
+  localFolderBrokerInfo,
   loadLocalFolderConnection,
   pickLocalFolder,
   queryLocalPermission,
@@ -107,12 +122,17 @@ import {
   saveLocalFolderConnection,
   supportsLocalFolder
 } from '../model/localFolderSync'
+import {
+  registerLocalFolderBroker,
+  unregisterLocalFolderBroker
+} from '@/apis/workspace_api'
 
 const props = defineProps({
   uid: { type: String, default: '' }
 })
 
 const supported = supportsLocalFolder()
+const isDesktop = Boolean(window.fullonDesktop?.isDesktop)
 const connection = ref(null)
 const permission = ref('')
 const entries = ref([])
@@ -120,6 +140,7 @@ const parts = ref([])
 const preview = ref(null)
 const loading = ref(false)
 const busy = ref(false)
+const agentAccess = ref(false)
 const error = ref('')
 let previewUrl = ''
 let loadSeq = 0
@@ -212,6 +233,15 @@ async function openPreview(entry) {
   }
 }
 
+async function syncAgentAccess() {
+  agentAccess.value = false
+  if (connection.value?.kind !== 'desktop') return
+  const info = await localFolderBrokerInfo(connection.value)
+  if (!info?.urls?.length || !info.token) throw new Error('桌面文件代理未启动')
+  await registerLocalFolderBroker(info.urls, info.token, connection.value.folderName || '本地文件夹')
+  agentAccess.value = true
+}
+
 async function connect() {
   if (!props.uid) return
   restoreSeq += 1
@@ -226,6 +256,11 @@ async function connect() {
     parts.value = []
     closePreview()
     await loadDirectory()
+    try {
+      await syncAgentAccess()
+    } catch (err) {
+      error.value = err?.message || 'Agent 本地访问登记失败'
+    }
   } catch (err) {
     if (err?.name !== 'AbortError') error.value = err?.message || '连接本地文件夹失败'
   } finally {
@@ -255,9 +290,14 @@ async function disconnect() {
   loading.value = false
   let failure = ''
   try {
+    await unregisterLocalFolderBroker()
+  } catch (err) {
+    failure = err?.message || '撤销 Agent 本地访问失败'
+  }
+  try {
     await forgetLocalFolder(connection.value)
   } catch (err) {
-    failure = err?.message || '撤销本地文件夹授权失败'
+    failure ||= err?.message || '撤销本地文件夹授权失败'
   }
   try {
     await clearLocalFolderConnection(props.uid)
@@ -267,6 +307,7 @@ async function disconnect() {
   if (failure) error.value = failure
   connection.value = null
   permission.value = ''
+  agentAccess.value = false
   entries.value = []
   parts.value = []
   closePreview()
@@ -277,9 +318,17 @@ async function restore() {
   const saved = await loadLocalFolderConnection(props.uid)
   if (seq !== restoreSeq) return
   connection.value = saved
+  agentAccess.value = false
   if (!connection.value) return
   permission.value = await queryLocalPermission(connection.value)
-  if (seq === restoreSeq && permission.value === 'granted') await loadDirectory()
+  if (seq === restoreSeq && permission.value === 'granted') {
+    await loadDirectory()
+    try {
+      await syncAgentAccess()
+    } catch (err) {
+      if (seq === restoreSeq) error.value = err?.message || 'Agent 本地访问登记失败'
+    }
+  }
 }
 
 const handleFocus = () => {
@@ -313,6 +362,7 @@ watch(
     }
     connection.value = null
     permission.value = ''
+    agentAccess.value = false
     parts.value = []
     entries.value = []
     closePreview()
@@ -367,6 +417,18 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   font-size: 15px;
+}
+.local-browser-agent {
+  padding: 1px 7px;
+  border: 1px solid var(--gray-200);
+  border-radius: 999px;
+  color: var(--gray-600);
+  font-size: 11px;
+  font-weight: 400;
+}
+.local-browser-agent.connected {
+  border-color: var(--success);
+  color: var(--success);
 }
 .local-browser-actions {
   display: flex;

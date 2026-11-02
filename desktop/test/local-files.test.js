@@ -7,7 +7,7 @@ const test = require('node:test')
 const { assertName, isInside, resolveWithin } = require('../lib/local-files')
 
 test('rejects traversal and absolute names', () => {
-  for (const name of ['..', '.', '', 'a/b', 'a\\b', '/etc/passwd', 'C:\\Windows']) {
+  for (const name of ['..', '.', '', 'a/b', 'a\\b', '/etc/passwd', 'C:\\Windows', 'note.txt:secret']) {
     assert.throws(() => assertName(name), /非法文件路径/)
   }
   assert.doesNotThrow(() => assertName('normal.txt'))

@@ -1,4 +1,5 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } = require('electron')
+const crypto = require('node:crypto')
 const fs = require('node:fs/promises')
 const http = require('node:http')
 const https = require('node:https')
@@ -6,6 +7,7 @@ const path = require('node:path')
 const { URL } = require('node:url')
 const { samePath, isInside, resolveWithin } = require('./lib/local-files')
 const { parseRequestPath, buildProxyTarget } = require('./lib/proxy')
+const { handleBrokerRequest } = require('./lib/local-broker')
 
 const DEFAULT_CONFIG = {
   serverUrl: 'http://127.0.0.1:5050',
@@ -54,6 +56,7 @@ let localServer = null
 let config = { ...DEFAULT_CONFIG }
 let allowedRoot = ''
 let allowedRootUid = ''
+let brokerToken = crypto.randomBytes(32).toString('hex')
 
 function configFile() {
   return path.join(app.getPath('userData'), 'config.json')
@@ -116,6 +119,7 @@ async function setAllowedRoot(root, uid) {
   if (!stat.isDirectory()) throw new Error('请选择文件夹')
   allowedRoot = real
   allowedRootUid = String(uid)
+  brokerToken = crypto.randomBytes(32).toString('hex')
   config.allowedRoot = real
   config.allowedRootUid = allowedRootUid
   await saveConfig()
@@ -198,6 +202,19 @@ function registerIpc() {
     return { path: root, name: path.basename(root) || root }
   })
 
+  ipcMain.handle('fullon:broker-info', (event) => {
+    assertSender(event)
+    if (!allowedRoot || !allowedRootUid) return null
+    return {
+      token: brokerToken,
+      folderName: path.basename(allowedRoot) || '本地文件夹',
+      urls: [
+        `http://127.0.0.1:${LOCAL_PORT}`,
+        `http://host.docker.internal:${LOCAL_PORT}`
+      ]
+    }
+  })
+
   ipcMain.handle('fullon:list-directory', (event, uid, root, parts) => {
     assertSender(event)
     return listDirectory(uid, root, parts)
@@ -211,6 +228,7 @@ function registerIpc() {
     if (!allowedRootUid || String(uid) !== allowedRootUid) return true
     allowedRoot = ''
     allowedRootUid = ''
+    brokerToken = crypto.randomBytes(32).toString('hex')
     config.allowedRoot = ''
     config.allowedRootUid = ''
     await saveConfig()
@@ -308,17 +326,6 @@ async function serveStatic(request, response, pathname) {
 
 function createLocalServer() {
   const server = http.createServer((request, response) => {
-    let localHost
-    try {
-      localHost = new URL(`http://${request.headers.host}`).host
-    } catch {
-      localHost = ''
-    }
-    if (localHost !== new URL(`http://127.0.0.1:${LOCAL_PORT}`).host) {
-      response.writeHead(403)
-      response.end('Forbidden')
-      return
-    }
     let requestUrl
     try {
       requestUrl = parseRequestPath(request.url, `http://127.0.0.1:${LOCAL_PORT}`)
@@ -328,6 +335,34 @@ function createLocalServer() {
       return
     }
     const { pathname, requestPath } = requestUrl
+    const allowDockerHost = pathname.startsWith('/local-files/')
+    let localHost
+    try {
+      localHost = new URL(`http://${request.headers.host}`).host
+    } catch {
+      localHost = ''
+    }
+    const loopbackHost = new URL(`http://127.0.0.1:${LOCAL_PORT}`).host
+    const dockerHost = `host.docker.internal:${LOCAL_PORT}`
+    if (localHost !== loopbackHost && !(allowDockerHost && localHost === dockerHost)) {
+      response.writeHead(403)
+      response.end('Forbidden')
+      return
+    }
+    if (pathname === '/local-files/list' || pathname === '/local-files/read') {
+      handleBrokerRequest(request, response, {
+        pathname,
+        searchParams: new URL(request.url, `http://127.0.0.1:${LOCAL_PORT}`).searchParams,
+        token: brokerToken,
+        getRoot: () => allowedRoot,
+        listDirectory: (root, parts) => listDirectory(allowedRootUid, root, parts),
+        readFile: (root, parts) => readFile(allowedRootUid, root, parts)
+      }).catch(() => {
+        if (!response.headersSent) response.writeHead(500)
+        response.end('Internal Server Error')
+      })
+      return
+    }
     if (pathname.startsWith('/api')) {
       proxyRequest(request, response, config.serverUrl, null, requestPath)
       return

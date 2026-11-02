@@ -12,6 +12,11 @@ from yuxi.api.dependencies.auth import get_db, get_required_user
 from yuxi.api.responses.files import render_file_result
 from yuxi.api.uploads import prepare_upload_files
 from yuxi.modules.identity.models import User
+from yuxi.modules.workspace.local_broker import (
+    delete_local_broker_grant,
+    get_local_broker_grant,
+    save_local_broker_grant,
+)
 from yuxi.modules.workspace.services.files import (
     MAX_WORKSPACE_UPLOAD_SIZE_BYTES,
     create_workspace_directory,
@@ -36,6 +41,14 @@ class CreateWorkspaceDirectoryRequest(BaseModel):
 class UpdateWorkspaceFileContentRequest(BaseModel):
     path: str
     content: str
+
+
+class LocalFolderBrokerRequest(BaseModel):
+    """桌面客户端登记的只读本地文件代理。"""
+
+    urls: list[str]
+    token: str
+    folder_name: str
 
 
 @workspace.get("/tree", response_model=dict)
@@ -63,6 +76,38 @@ async def search_workspace_files_route(
     current_user: User = Depends(get_required_user),
 ):
     return await search_workspace_files(query=query, current_user=current_user)
+
+
+@workspace.get("/local-folder/broker", response_model=dict)
+async def get_local_folder_broker(current_user: User = Depends(get_required_user)):
+    """返回当前用户是否已登记桌面本地文件夹代理，不返回令牌。"""
+    grant = await get_local_broker_grant(current_user.uid)
+    return {"connected": grant is not None, "folder_name": grant.folder_name if grant else None}
+
+
+@workspace.put("/local-folder/broker", response_model=dict)
+async def register_local_folder_broker(
+    payload: LocalFolderBrokerRequest,
+    current_user: User = Depends(get_required_user),
+):
+    """登记桌面进程的只读代理；授权按 uid 隔离并短期有效。"""
+    try:
+        grant = await save_local_broker_grant(
+            uid=current_user.uid,
+            urls=payload.urls,
+            token=payload.token,
+            folder_name=payload.folder_name,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"connected": True, "folder_name": grant.folder_name}
+
+
+@workspace.delete("/local-folder/broker", response_model=dict)
+async def unregister_local_folder_broker(current_user: User = Depends(get_required_user)):
+    """断开时删除授权，Agent 下一次调用立即失败。"""
+    await delete_local_broker_grant(current_user.uid)
+    return {"connected": False}
 
 
 @workspace.get("/file")

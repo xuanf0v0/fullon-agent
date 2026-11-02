@@ -82,6 +82,11 @@ export async function pickLocalFolder(uid) {
   return { kind: 'browser', handle, folderName: handle.name }
 }
 
+export async function localFolderBrokerInfo(connection) {
+  if (connection?.kind !== 'desktop') return null
+  return desktopBridge()?.getBrokerInfo?.() || null
+}
+
 export async function queryLocalPermission(connection) {
   if (connection?.kind === 'desktop') return 'granted'
   if (!connection?.handle?.queryPermission) return 'granted'

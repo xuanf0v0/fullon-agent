@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   forgetLocalFolder,
   isVisibleLocalEntry,
+  localFolderBrokerInfo,
   pickLocalFolder,
   queryLocalPermission,
   readLocalDirectory,
@@ -89,6 +90,7 @@ test('desktop bridge forwards only relative parts and forgets the root', async (
     fullonDesktop: {
       isDesktop: true,
       chooseFolder: async (uid) => { calls.push(['choose', uid]); return { path: 'C:\\docs', name: 'docs' } },
+      getBrokerInfo: async () => ({ token: 't'.repeat(32), urls: ['http://127.0.0.1:5175'] }),
       listDirectory: async (uid, root, parts) => {
         calls.push(['list', uid, root, parts])
         return [{ name: 'note.md', kind: 'file', size: 4 }]
@@ -109,6 +111,10 @@ test('desktop bridge forwards only relative parts and forgets the root', async (
   const connection = await pickLocalFolder('user')
   assert.deepEqual(connection, { uid: 'user', kind: 'desktop', rootPath: 'C:\\docs', folderName: 'docs' })
   assert.equal(await queryLocalPermission(connection), 'granted')
+  assert.deepEqual(await localFolderBrokerInfo(connection), {
+    token: 't'.repeat(32),
+    urls: ['http://127.0.0.1:5175']
+  })
   assert.deepEqual(await readLocalDirectory(connection, ['sub']), [
     { name: 'note.md', kind: 'file', size: 4 }
   ])
