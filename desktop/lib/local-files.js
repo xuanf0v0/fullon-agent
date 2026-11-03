@@ -102,7 +102,7 @@ async function writeWithin(root, parts, content) {
 
 /** 删除普通文件或空目录；逐段拒绝符号链接，不递归删除。 */
 async function deleteWithin(root, parts) {
-  if (!Array.isArray(parts) || !parts.length) throw new Error('不能删除个人空间根目录')
+  if (!Array.isArray(parts) || !parts.length) throw new Error('不能删除工作区根目录')
   const rootReal = await fs.realpath(root)
   let current = rootReal
   for (const part of parts) {

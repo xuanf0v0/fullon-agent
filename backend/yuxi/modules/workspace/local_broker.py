@@ -94,6 +94,6 @@ async def get_local_broker_grant(uid: str) -> LocalBrokerGrant | None:
 
 
 async def delete_local_broker_grant(uid: str) -> None:
-    """断开个人空间时立即撤销 Agent 读取能力。"""
+    """断开工作区时立即撤销 Agent 读取能力。"""
     redis = await get_async_redis_client()
     await redis.delete(_key(uid))

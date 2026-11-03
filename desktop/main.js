@@ -194,7 +194,7 @@ function registerIpc() {
   ipcMain.handle('fullon:choose-folder', async (event, uid) => {
     assertSender(event)
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择个人空间本地文件夹',
+      title: '选择工作区本地文件夹',
       properties: ['openDirectory', 'createDirectory']
     })
     if (result.canceled || !result.filePaths[0]) return null

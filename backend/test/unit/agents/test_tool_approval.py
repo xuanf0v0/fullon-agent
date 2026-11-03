@@ -93,7 +93,7 @@ def test_unknown_tool_approval_mode_is_rejected():
 
 
 def test_local_space_write_interrupts_with_real_agent_middleware():
-    """实际构图确认个人空间写入在工具执行前产生审批中断。"""
+    """实际构图确认工作区写入在工具执行前产生审批中断。"""
     from langchain.agents import create_agent
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
     from langchain_core.messages import AIMessage, HumanMessage

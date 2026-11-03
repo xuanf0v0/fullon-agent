@@ -145,7 +145,7 @@ def test_local_space_tools_are_always_registered():
 
 @pytest.mark.asyncio
 async def test_runtime_assembly_exposes_local_space_tools():
-    """真实运行时装配必须把两个个人空间工具交给所有 Agent。"""
+    """真实运行时装配必须把两个工作区工具交给所有 Agent。"""
     from types import SimpleNamespace
 
     from yuxi.modules.extensions.tools.runtime import resolve_configured_runtime_tools
@@ -211,7 +211,7 @@ async def test_write_and_delete_validate_before_network():
     )
 
     runtime = SimpleNamespace(context={"uid": "user"})
-    with pytest.raises(ValueError, match="不能删除个人空间根目录"):
+    with pytest.raises(ValueError, match="不能删除工作区根目录"):
         await delete_local_space_path.ainvoke({"path": "", "runtime": runtime})
     with pytest.raises(ValueError, match="不能超过 1 MiB"):
         await write_local_space_file.ainvoke(

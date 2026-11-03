@@ -341,7 +341,7 @@ async page => {
   await historyMessage.waitFor()
   const editor = page.locator('.agent-view [contenteditable="true"]').first()
   await editor.fill('返回线程时保留这段未发送草稿')
-  for (const destination of ['智能体', '个人空间']) {
+  for (const destination of ['智能体', '工作区']) {
     await page.locator('.nav').getByRole('link', { name: destination, exact: true }).click()
     await page.waitForURL(destination === '智能体' ? origin + '/agent-manage' : origin + '/workspace')
     const conversationEntry = page.locator('.nav').getByRole('link', { name: '对话', exact: true })

@@ -53,7 +53,7 @@ test('文件列表工具栏暴露上传与新建文件夹按钮，拖拽仅在�
   assert.match(source, /event\.currentTarget\.contains\(related\)/)
 })
 
-test('拖拽上传在页面侧仅作用于个人空间非只读目录', () => {
+test('拖拽上传在页面侧仅作用于工作区非只读目录', () => {
   const source = readSource('../../src/pages/WorkspaceView.vue')
 
   assert.match(source, /:uploadable="personalUploadEnabled"/)

@@ -282,8 +282,8 @@ const TOOL_DISPLAY_NAMES = {
   write_file: '写入文件',
   edit_file: '编辑文件',
   execute: '执行命令',
-  write_local_space_file: '写入个人空间文件',
-  delete_local_space_path: '删除个人空间文件'
+  write_local_space_file: '写入工作区文件',
+  delete_local_space_path: '删除工作区文件'
 }
 
 const props = defineProps({
@@ -320,8 +320,8 @@ const toolApprovalQuestion = computed(() => {
   if (activeToolRequest.value?.name === 'execute') return '是否允许执行以下命令？'
   if (activeToolRequest.value?.name === 'write_file') return '是否允许写入此文件？'
   if (activeToolRequest.value?.name === 'edit_file') return '是否允许编辑此文件？'
-  if (activeToolRequest.value?.name === 'write_local_space_file') return '是否允许写入个人空间中的此文件？'
-  if (activeToolRequest.value?.name === 'delete_local_space_path') return '是否允许删除个人空间中的此文件或空目录？'
+  if (activeToolRequest.value?.name === 'write_local_space_file') return '是否允许写入工作区中的此文件？'
+  if (activeToolRequest.value?.name === 'delete_local_space_path') return '是否允许删除工作区中的此文件或空目录？'
   return '是否允许执行此工具操作？'
 })
 const toolApprovalSummary = computed(() => getToolApprovalSummary(activeToolRequest.value))

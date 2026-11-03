@@ -86,7 +86,7 @@ test('tool approval modes and interrupt payloads follow their state contracts', 
 })
 
 
-test('个人空间写删审批展示目标路径而不展示正文', () => {
+test('工作区写删审批展示目标路径而不展示正文', () => {
   assert.equal(
     getToolApprovalSummary({
       name: 'write_local_space_file',

@@ -8,7 +8,7 @@
     <div v-else-if="!connection" class="local-browser-empty">
       <HardDrive :size="40" />
       <h2>连接本地文件夹</h2>
-      <p>个人空间直接读取你电脑上的目录，不导入、不复制；每次进入或刷新都读取本地最新内容。</p>
+      <p>工作区直接读取你电脑上的目录，不导入、不复制；每次进入或刷新都读取本地最新内容。</p>
       <a-button type="primary" :loading="busy" @click="connect">选择本地文件夹</a-button>
       <p class="local-browser-hint">
         {{

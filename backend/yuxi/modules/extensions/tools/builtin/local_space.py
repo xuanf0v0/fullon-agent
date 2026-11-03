@@ -1,4 +1,4 @@
-"""读取桌面客户端个人空间中用户授权的本地文件。"""
+"""读取桌面客户端工作区中用户授权的本地文件。"""
 
 from __future__ import annotations
 
@@ -16,36 +16,36 @@ _MAX_WRITE_BYTES = 1024 * 1024
 
 
 class ListLocalSpaceInput(BaseModel):
-    """声明要浏览的个人空间目录。"""
+    """声明要浏览的工作区目录。"""
 
-    path: str = Field(default="", description="相对个人空间根目录的目录路径；根目录留空")
+    path: str = Field(default="", description="相对工作区根目录的目录路径；根目录留空")
 
 
 class ReadLocalSpaceInput(BaseModel):
-    """声明要读取的个人空间文件。"""
+    """声明要读取的工作区文件。"""
 
-    path: str = Field(description="相对个人空间根目录的文件路径，例如 notes/today.md")
+    path: str = Field(description="相对工作区根目录的文件路径，例如 notes/today.md")
 
 
 class WriteLocalSpaceInput(BaseModel):
-    """声明要写入的个人空间文件。"""
+    """声明要写入的工作区文件。"""
 
-    path: str = Field(description="相对个人空间根目录的文件路径，例如 notes/today.md")
+    path: str = Field(description="相对工作区根目录的文件路径，例如 notes/today.md")
     content: str = Field(description="要写入的 UTF-8 文本；会覆盖原文件")
 
 
 class DeleteLocalSpaceInput(BaseModel):
-    """声明要删除的个人空间文件或空目录。"""
+    """声明要删除的工作区文件或空目录。"""
 
-    path: str = Field(description="相对个人空间根目录的文件或空目录路径")
+    path: str = Field(description="相对工作区根目录的文件或空目录路径")
 
 
 LIST_LOCAL_SPACE_DESCRIPTION = """
-列出用户在 fullon 桌面客户端“个人空间”中授权的本地文件夹的一层内容。
+列出用户在 fullon 桌面客户端“工作区”中授权的本地文件夹的一层内容。
 
 使用场景：
-1. 用户要求查看或整理个人空间里的本地文件
-2. 需要先确认个人空间中有哪些文件，再读取指定文件
+1. 用户要求查看或整理工作区里的本地文件
+2. 需要先确认工作区中有哪些文件，再读取指定文件
 
 限制：
 1. 仅当用户使用桌面客户端并连接了本地文件夹时可用
@@ -54,10 +54,10 @@ LIST_LOCAL_SPACE_DESCRIPTION = """
 """
 
 READ_LOCAL_SPACE_DESCRIPTION = """
-读取用户在 fullon 桌面客户端“个人空间”中授权的本地文件内容。
+读取用户在 fullon 桌面客户端“工作区”中授权的本地文件内容。
 
 使用场景：
-1. 用户要求你阅读个人空间里的某个本地文件
+1. 用户要求你阅读工作区里的某个本地文件
 2. 需要基于本地文档回答问题、总结或生成新内容
 
 限制：
@@ -67,10 +67,10 @@ READ_LOCAL_SPACE_DESCRIPTION = """
 """
 
 WRITE_LOCAL_SPACE_DESCRIPTION = """
-在用户授权的个人空间本地文件夹中创建或覆盖一个 UTF-8 文本文件。
+在用户授权的工作区本地文件夹中创建或覆盖一个 UTF-8 文本文件。
 
 使用场景：
-1. 用户明确要求把结果写回个人空间的本地文件
+1. 用户明确要求把结果写回工作区的本地文件
 2. 需要在本地文件夹中新建笔记、报告或代码文件
 
 限制：
@@ -81,10 +81,10 @@ WRITE_LOCAL_SPACE_DESCRIPTION = """
 """
 
 DELETE_LOCAL_SPACE_DESCRIPTION = """
-删除用户授权的个人空间本地文件夹中的普通文件或空目录。
+删除用户授权的工作区本地文件夹中的普通文件或空目录。
 
 使用场景：
-1. 用户明确要求删除个人空间里的某个文件或空目录
+1. 用户明确要求删除工作区里的某个文件或空目录
 2. 需要清理刚创建的临时文件
 
 限制：
@@ -102,7 +102,7 @@ def _normalize_relative_path(value: str) -> str:
     if len(path) > _MAX_RELATIVE_PATH_LENGTH:
         raise ValueError("路径过长")
     if path.startswith("/"):
-        raise ValueError("只允许个人空间内的相对路径")
+        raise ValueError("只允许工作区内的相对路径")
     parts = [part for part in path.split("/") if part]
     for part in parts:
         if part in {".", ".."} or ":" in part or "\x00" in part:
@@ -114,7 +114,7 @@ async def _call_broker(uid: str, endpoint: str, path: str, *, content: str | Non
     """按登记的地址依次调用桌面代理，只返回代理的业务响应。"""
     grant = await get_local_broker_grant(uid)
     if grant is None:
-        raise ValueError("个人空间未连接到桌面客户端，请先在桌面客户端连接本地文件夹")
+        raise ValueError("工作区未连接到桌面客户端，请先在桌面客户端连接本地文件夹")
     headers = {"Authorization": f"Bearer {grant.token}"}
     write = endpoint in {"write", "delete"}
     payload = {"path": path, "content": content} if endpoint == "write" else {"path": path}
@@ -130,18 +130,18 @@ async def _call_broker(uid: str, endpoint: str, path: str, *, content: str | Non
             except httpx.HTTPError:
                 continue
             if response.status_code in {401, 403}:
-                raise ValueError("个人空间授权已失效，请在桌面客户端重新连接本地文件夹")
+                raise ValueError("工作区授权已失效，请在桌面客户端重新连接本地文件夹")
             if response.status_code == 503:
-                raise ValueError("个人空间未连接到本地文件夹，请重新选择文件夹")
+                raise ValueError("工作区未连接到本地文件夹，请重新选择文件夹")
             if response.status_code == 404:
-                raise ValueError("个人空间中的文件或目录不存在")
+                raise ValueError("工作区中的文件或目录不存在")
             if response.status_code != 200:
-                raise ValueError("个人空间操作失败，请稍后重试")
+                raise ValueError("工作区操作失败，请稍后重试")
             try:
                 return response.json()
             except ValueError as error:
                 raise ValueError("桌面客户端返回了无效数据") from error
-    raise ValueError("无法连接桌面客户端，请确认 fullon 正在运行且个人空间已连接本地文件夹")
+    raise ValueError("无法连接桌面客户端，请确认 fullon 正在运行且工作区已连接本地文件夹")
 
 
 async def _uid_from_runtime(runtime: ToolRuntime) -> str:
@@ -153,13 +153,13 @@ async def _uid_from_runtime(runtime: ToolRuntime) -> str:
 
 @tool(
     category="builtin",
-    tags=["文件", "个人空间"],
-    display_name="浏览个人空间",
+    tags=["文件", "工作区"],
+    display_name="浏览工作区",
     description=LIST_LOCAL_SPACE_DESCRIPTION,
     args_schema=ListLocalSpaceInput,
 )
 async def list_local_space_files(runtime: ToolRuntime, path: str = "") -> dict:
-    """列出用户桌面个人空间中的一层目录。"""
+    """列出用户桌面工作区中的一层目录。"""
     uid = await _uid_from_runtime(runtime)
     normalized = _normalize_relative_path(path)
     data = await _call_broker(uid, "list", normalized)
@@ -173,13 +173,13 @@ async def list_local_space_files(runtime: ToolRuntime, path: str = "") -> dict:
 
 @tool(
     category="builtin",
-    tags=["文件", "个人空间"],
-    display_name="读取个人空间文件",
+    tags=["文件", "工作区"],
+    display_name="读取工作区文件",
     description=READ_LOCAL_SPACE_DESCRIPTION,
     args_schema=ReadLocalSpaceInput,
 )
 async def read_local_space_file(runtime: ToolRuntime, path: str) -> dict:
-    """读取用户桌面个人空间中的文本文件或二进制元数据。"""
+    """读取用户桌面工作区中的文本文件或二进制元数据。"""
     uid = await _uid_from_runtime(runtime)
     normalized = _normalize_relative_path(path)
     if not normalized:
@@ -198,13 +198,13 @@ async def read_local_space_file(runtime: ToolRuntime, path: str) -> dict:
 
 @tool(
     category="builtin",
-    tags=["文件", "个人空间"],
-    display_name="写入个人空间文件",
+    tags=["文件", "工作区"],
+    display_name="写入工作区文件",
     description=WRITE_LOCAL_SPACE_DESCRIPTION,
     args_schema=WriteLocalSpaceInput,
 )
 async def write_local_space_file(runtime: ToolRuntime, path: str, content: str) -> dict:
-    """在桌面个人空间中创建或覆盖 UTF-8 文本文件。"""
+    """在桌面工作区中创建或覆盖 UTF-8 文本文件。"""
     uid = await _uid_from_runtime(runtime)
     normalized = _normalize_relative_path(path)
     if not normalized:
@@ -219,16 +219,16 @@ async def write_local_space_file(runtime: ToolRuntime, path: str, content: str) 
 
 @tool(
     category="builtin",
-    tags=["文件", "个人空间"],
-    display_name="删除个人空间文件",
+    tags=["文件", "工作区"],
+    display_name="删除工作区文件",
     description=DELETE_LOCAL_SPACE_DESCRIPTION,
     args_schema=DeleteLocalSpaceInput,
 )
 async def delete_local_space_path(runtime: ToolRuntime, path: str) -> dict:
-    """删除桌面个人空间中的普通文件或空目录。"""
+    """删除桌面工作区中的普通文件或空目录。"""
     uid = await _uid_from_runtime(runtime)
     normalized = _normalize_relative_path(path)
     if not normalized:
-        raise ValueError("不能删除个人空间根目录")
+        raise ValueError("不能删除工作区根目录")
     data = await _call_broker(uid, "delete", normalized)
     return {"path": data.get("path", normalized), "kind": data.get("kind"), "deleted": True}

@@ -74,7 +74,7 @@ curl --fail http://localhost:5050/api/system/ready
 
 ### 4. 桌面客户端（可选）
 
-需要直接浏览本机文件夹或让 Agent 读写个人空间时，可使用 Electron 客户端；它复用上述 Docker 后端，不内置数据库与 worker。构建和运行方式见 [desktop/README.md](desktop/README.md)。
+需要直接浏览本机文件夹或让 Agent 读写工作区时，可使用 Electron 客户端；它复用上述 Docker 后端，不内置数据库与 worker。构建和运行方式见 [desktop/README.md](desktop/README.md)。
 
 ## 文档导航
 

@@ -1,10 +1,10 @@
 <template>
   <div class="workspace-view layout-container">
-    <PageHeader title="个人空间" :loading="loadingTree || loadingPreview" :show-border="true">
+    <PageHeader title="工作区" :loading="loadingTree || loadingPreview" :show-border="true">
       <template #actions>
         <a-button
           class="lucide-icon-btn"
-          :aria-label="sidebarCollapsed ? '展开个人空间侧边栏' : '收起个人空间侧边栏'"
+          :aria-label="sidebarCollapsed ? '展开工作区侧边栏' : '收起工作区侧边栏'"
           :aria-expanded="!sidebarCollapsed"
           aria-controls="workspace-navigation"
           @click="sidebarCollapsed = !sidebarCollapsed"
@@ -286,7 +286,7 @@ const isSameOrChildPath = (path, targetPath) => {
   )
 }
 const isReadonlyWorkspacePath = computed(() => isKnowledgeSource.value)
-// 与侧边栏上传入口同一语义：仅个人空间非只读目录可上传，知识库只读。
+// 与侧边栏上传入口同一语义：仅工作区非只读目录可上传，知识库只读。
 const personalUploadEnabled = computed(
   () => activeSourceKey.value === 'personal' && !isReadonlyWorkspacePath.value
 )
@@ -465,8 +465,8 @@ const loadWorkspaceEntries = async (path = '/') => {
       selectionMode.value = false
     }
   } catch (error) {
-    console.warn('加载个人空间目录失败:', error)
-    message.error('加载个人空间目录失败')
+    console.warn('加载工作区目录失败:', error)
+    message.error('加载工作区目录失败')
   } finally {
     loadingTree.value = false
   }
@@ -682,7 +682,7 @@ const handleSavePreviewFile = async (content) => {
     await loadWorkspaceEntries(currentPath.value)
     message.success('文件保存成功')
   } catch (error) {
-    console.warn('保存个人空间文件失败:', error)
+    console.warn('保存工作区文件失败:', error)
     message.error(error?.message || '文件保存失败')
   } finally {
     savingPreviewFile.value = false
@@ -936,7 +936,7 @@ const deleteEntries = async (targetEntries) => {
     await loadWorkspaceEntries(currentPath.value)
     message.success(paths.length > 1 ? '选中项删除成功' : '删除成功')
   } catch (error) {
-    console.warn('删除个人空间文件失败:', error)
+    console.warn('删除工作区文件失败:', error)
     message.error(error?.message || '删除失败')
     await loadWorkspaceEntries(currentPath.value)
   } finally {

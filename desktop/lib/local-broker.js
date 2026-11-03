@@ -120,7 +120,7 @@ async function handleBrokerRequest(
   }
   const root = getRoot()
   if (!root) {
-    sendJson(response, 503, { error: 'not_connected', message: '请在个人空间连接本地文件夹' })
+    sendJson(response, 503, { error: 'not_connected', message: '请在工作区连接本地文件夹' })
     return true
   }
   try {

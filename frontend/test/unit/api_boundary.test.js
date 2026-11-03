@@ -440,7 +440,7 @@ test('四个 API 模块复用查询参数边界并保持 endpoint 问号语义',
   })
 })
 
-test('个人空间文件夹上传发送根目录和逐文件相对路径，普通上传保留原协议', async () => {
+test('工作区文件夹上传发送根目录和逐文件相对路径，普通上传保留原协议', async () => {
   await withServer(async (server) => {
     storageValues.set('user_token', 'test-token')
     const requests = []

@@ -6,10 +6,10 @@ Owner：desktop/main.js
 
 ## 问题
 
-当前桌面客户端复用 Docker Compose 中的 API、worker、PostgreSQL、Redis、MinIO、Milvus、Neo4j 和沙盒服务，个人空间只能由渲染进程读取本地目录，Agent 看不到这些文件。产品希望：
+当前桌面客户端复用 Docker Compose 中的 API、worker、PostgreSQL、Redis、MinIO、Milvus、Neo4j 和沙盒服务，工作区只能由渲染进程读取本地目录，Agent 看不到这些文件。产品希望：
 
 1. 项目逐步脱离 Docker，以 Electron 客户端为主要运行形态。
-2. Agent 能读取个人空间中选择的本地文件。
+2. Agent 能读取工作区中选择的本地文件。
 
 两个目标的成本差异很大，需要分开决策。
 
@@ -41,7 +41,7 @@ Agent runtime、队列、持久化、检索全部改用 TypeScript，删除 Pyth
 
 #### 阶段
 
-Phase 1 已实施并验证，见 [Agent 读取桌面个人空间本地文件](../implemented/2026-11-02-agent-local-space-access.md)。本记录保留 Phase 2–4 的决策空间。
+Phase 1 已实施并验证，见 [Agent 读取桌面工作区本地文件](../implemented/2026-11-02-agent-local-space-access.md)。本记录保留 Phase 2–4 的决策空间。
 
 1. **Phase 1**：实现本机文件代理与 Agent 工具，保留 Docker。验收后直接解决 Agent 读本地文件。
 2. **Phase 2**：Electron 管理 Python sidecar，保留外部 PostgreSQL/Redis/MinIO/Milvus/Neo4j，去掉 Compose 启动依赖。
@@ -67,7 +67,7 @@ Phase 1 已实施并验证，见 [Agent 读取桌面个人空间本地文件](..
 
 - **保留 Docker，只做本机文件代理**：满足 Agent 读本地文件，保留现有部署与多用户能力。这是当前已实施的 Phase 1。
 - **把宿主机目录挂载进容器**：需要改 Compose 和 Docker Desktop 文件共享，换目录要重启，无法按用户隔离。
-- **把文件复制到服务端工作区**：产生陈旧副本，违背个人空间实时浏览的产品约束。
+- **把文件复制到服务端工作区**：产生陈旧副本，违背工作区实时浏览的产品约束。
 - **直接重写为纯客户端 Agent 运行时**：功能对齐和迁移成本最高，工具生态需要整体重建。
 - **要求用户安装 WSL2 代替 Docker**：仍是虚拟化依赖，桌面安装与支持成本没有实质下降。
 

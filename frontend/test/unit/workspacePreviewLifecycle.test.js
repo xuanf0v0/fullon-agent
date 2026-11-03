@@ -53,7 +53,7 @@ test('侧栏预览离开缓存页面后不因零宽度变成弹窗，返回时�
   hooks.deactivated?.()
   state.workspaceMainWidth.value = 0
   await nextTick()
-  assert.equal(isModalOpen(view), false, '离开个人空间后不得出现预览弹窗')
+  assert.equal(isModalOpen(view), false, '离开工作区后不得出现预览弹窗')
   assert.equal(view.inlinePreviewVisible, true, '隐藏容器的零宽度不得改变侧栏预览模式')
   assert.equal(view.previewModalVisible, false)
   assert.equal(view.selectedPreviewPath, '/agents/MEMORY.md')
@@ -93,7 +93,7 @@ test('窄屏预览弹窗离开缓存页面后隐藏，返回仍保留选中文�
   assert.equal(view.selectedPreviewPath, '/agents/MEMORY.md')
 })
 
-test('个人空间宽屏使用弹窗，关闭后切知识库不复活旧预览', async (t) => {
+test('工作区宽屏使用弹窗，关闭后切知识库不复活旧预览', async (t) => {
   const { state, view } = setupWorkspace(t, 1200)
   state.startPreviewRequest({ path: '/agents/MEMORY.md', name: 'MEMORY.md' })
   await nextTick()

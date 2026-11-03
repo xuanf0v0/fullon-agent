@@ -29,7 +29,7 @@ OIDC_CLIENT_SECRET=<private-client-secret>
 OIDC_REDIRECT_URI=https://yuxi.example.com/api/auth/oidc/callback
 ```
 
-生产模式拒绝 HTTP issuer、回调和协议端点。HTTPS 必须覆盖浏览器到 Yuxi、浏览器到认证中心及 API 到认证中心的访问；cookie 为 HttpOnly、SameSite=Lax，HTTPS 回调时附加 Secure。隔离开发模式允许 HTTP。公网只有 HTTP 时保持 `OIDC_ENABLED=false`，登录页自动隐藏第三方登录区域，个人空间只展示文件。
+生产模式拒绝 HTTP issuer、回调和协议端点。HTTPS 必须覆盖浏览器到 Yuxi、浏览器到认证中心及 API 到认证中心的访问；cookie 为 HttpOnly、SameSite=Lax，HTTPS 回调时附加 Secure。隔离开发模式允许 HTTP。公网只有 HTTP 时保持 `OIDC_ENABLED=false`，登录页自动隐藏第三方登录区域，工作区只展示文件。
 
 | 变量 | 默认值 | 作用 |
 | --- | --- | --- |

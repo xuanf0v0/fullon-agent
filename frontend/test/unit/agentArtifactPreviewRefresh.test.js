@@ -102,7 +102,7 @@ async function setupPanel(t) {
   }
 }
 
-test('同名交付物在终态通知后更新，默认个人空间树不阻断活动产物刷新', async (t) => {
+test('同名交付物在终态通知后更新，默认工作区树不阻断活动产物刷新', async (t) => {
   const panel = await setupPanel(t)
   assert.match(panel.view.currentFile.value.content, /20万元/)
   assert.equal(panel.requests.length, 1, '同时触发的首次预览应共享同一次读取')
@@ -116,7 +116,7 @@ test('同名交付物在终态通知后更新，默认个人空间树不阻断�
   assert.equal(panel.props.previewCache.has('thread-b:/other'), true)
 })
 
-test('产物预览中的手动刷新读取当前产物，不只刷新个人空间树', async (t) => {
+test('产物预览中的手动刷新读取当前产物，不只刷新工作区树', async (t) => {
   const panel = await setupPanel(t)
   panel.update('<h1>手动修订</h1>')
   await panel.view.emitRefresh()

@@ -38,8 +38,8 @@
             </button>
             <button
               class="item-action-btn"
-              :title="isSaving(file.path) ? '保存中' : '保存到个人空间'"
-              aria-label="保存到个人空间"
+              :title="isSaving(file.path) ? '保存中' : '保存到工作区'"
+              aria-label="保存到工作区"
               :disabled="isSaving(file.path)"
               @click.stop="saveToWorkspace(file)"
             >
@@ -62,7 +62,7 @@
     @ok="confirmSave"
     @cancel="closeSaveDialog"
   >
-    <p class="save-dialog-hint">选择保存到个人工作区的目录</p>
+    <p class="save-dialog-hint">选择保存到工作区的目录</p>
     <WorkspacePathPicker
       v-model="selectedDestination"
       selection-mode="directory"
@@ -181,12 +181,12 @@ const confirmSave = async () => {
       file.path,
       selectedDestination.value
     )
-    message.success(`已保存到个人空间：${result.saved_path}`)
+    message.success(`已保存到工作区：${result.saved_path}`)
     emit('saved', result)
     saveDialogOpen.value = false
     pendingSaveFile.value = null
   } catch (error) {
-    message.error(error?.message || '保存到个人空间失败')
+    message.error(error?.message || '保存到工作区失败')
   } finally {
     setSaving(file.path, false)
   }

@@ -163,7 +163,7 @@ const mainList = computed(() => {
   })
 
   items.push({
-    name: '个人空间',
+    name: '工作区',
     path: '/workspace',
     icon: HardDrive,
     activeIcon: HardDrive

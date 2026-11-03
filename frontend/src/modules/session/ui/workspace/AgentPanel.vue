@@ -97,8 +97,8 @@
           <div class="tree-toolbar-actions">
             <button
               class="header-action-btn"
-              :title="activeTreeScope === 'workspace' ? '搜索个人空间' : '搜索对话目录'"
-              :aria-label="activeTreeScope === 'workspace' ? '搜索个人空间' : '搜索对话目录'"
+              :title="activeTreeScope === 'workspace' ? '搜索工作区' : '搜索对话目录'"
+              :aria-label="activeTreeScope === 'workspace' ? '搜索工作区' : '搜索对话目录'"
               :disabled="activeTreeScope === 'thread' && !threadId"
               @click="fileSearchOpen = true"
             >
@@ -106,8 +106,8 @@
             </button>
             <button
               class="header-action-btn"
-              :title="activeTreeScope === 'workspace' ? '刷新个人空间' : '刷新文件'"
-              :aria-label="activeTreeScope === 'workspace' ? '刷新个人空间' : '刷新文件'"
+              :title="activeTreeScope === 'workspace' ? '刷新工作区' : '刷新文件'"
+              :aria-label="activeTreeScope === 'workspace' ? '刷新工作区' : '刷新文件'"
               @click="emitRefresh"
             >
               <RefreshCw :size="15" />
@@ -162,14 +162,14 @@
           </div>
         </div>
         <div v-show="activeTreeScope === 'workspace'" class="tree-scope-pane">
-          <div v-if="workspaceLoading" class="empty">正在加载个人空间...</div>
+          <div v-if="workspaceLoading" class="empty">正在加载工作区...</div>
           <div v-else-if="workspaceError" class="empty error-state">
             <div>{{ workspaceError }}</div>
             <a-button type="link" size="small" @click="refreshWorkspaceTree({ force: true })">
               重试
             </a-button>
           </div>
-          <div v-else-if="!workspaceTreeData.length" class="empty">个人空间为空</div>
+          <div v-else-if="!workspaceTreeData.length" class="empty">工作区为空</div>
           <div v-else class="file-tree-container">
             <FileTreeComponent
               v-model:selectedKeys="workspaceSelectedKeys"
@@ -250,7 +250,7 @@
       default-mode="file"
       :file-search="searchActiveTreeFiles"
       :file-placeholder="fileSearchPlaceholder"
-      :file-scope-hint="activeTreeScope === 'workspace' ? '仅搜索个人空间，不包含知识库文件。' : '仅搜索当前对话或关联项目的工作目录。'"
+      :file-scope-hint="activeTreeScope === 'workspace' ? '仅搜索工作区，不包含知识库文件。' : '仅搜索当前对话或关联项目的工作目录。'"
       @select-file="handleSearchSelect"
     />
   </div>
@@ -394,9 +394,9 @@ const selectedKeys = ref([])
 const expandedKeys = ref([])
 const deletingPaths = ref(new Set())
 
-// 个人空间（个人 workspace）树：与对话目录相互独立、切换保活。
+// 工作区（个人 workspace）树：与对话目录相互独立、切换保活。
 const treeScopes = [
-  { key: 'workspace', label: '个人空间' },
+  { key: 'workspace', label: '工作区' },
   { key: 'thread', label: '对话目录' }
 ]
 const activeTreeScope = ref('workspace')
@@ -438,7 +438,7 @@ const PREFETCH_DIRECTORY_NAMES = ['outputs', 'uploads']
 const HIDE_WHEN_EMPTY_NAMES = ['outputs', 'uploads']
 
 const fileSearchPlaceholder = computed(() =>
-  activeTreeScope.value === 'workspace' ? '搜索个人空间的文件...' : '搜索当前对话的文件...'
+  activeTreeScope.value === 'workspace' ? '搜索工作区的文件...' : '搜索当前对话的文件...'
 )
 
 const searchActiveTreeFiles = (query) =>
@@ -740,7 +740,7 @@ const refreshWorkspaceTree = async ({ force = false, refreshPreview = false } = 
           await loadActivePreview()
         }
       } catch (error) {
-        workspaceError.value = error?.message || '加载个人空间失败'
+        workspaceError.value = error?.message || '加载工作区失败'
         console.error('Failed to load workspace tree', error)
       }
     } while (workspaceRefreshPending)
@@ -954,7 +954,7 @@ const loadActivePreview = async ({ baseFileOverride = null } = {}) => {
       Number(error?.status || error?.statusCode || 0) === 403 ||
       String(error?.message || '').includes('403')
     const errorMessage = is403
-      ? '暂无权限访问该文件（403），请确认文件是否属于当前对话或个人空间。'
+      ? '暂无权限访问该文件（403），请确认文件是否属于当前对话或工作区。'
       : error?.message || '文件加载失败，请重试'
 
     currentFile.value = {
