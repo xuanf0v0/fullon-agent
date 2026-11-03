@@ -28,7 +28,12 @@ class Project(Base):
         UniqueConstraint("id", "uid", name="uq_projects_id_uid"),
         UniqueConstraint("uid", "idempotency_key", name="uq_projects_uid_idempotency_key"),
         CheckConstraint("selection_status IN ('implicit', 'selectable')", name="ck_projects_selection_status"),
-        CheckConstraint("directory_mode IN ('managed', 'linked')", name="ck_projects_directory_mode"),
+        CheckConstraint("directory_mode IN ('managed', 'linked', 'local')", name="ck_projects_directory_mode"),
+        CheckConstraint(
+            "(directory_mode = 'local' AND local_root IS NOT NULL AND local_root <> '') OR "
+            "(directory_mode <> 'local' AND local_root IS NULL)",
+            name="ck_projects_local_root",
+        ),
         CheckConstraint(PROJECT_STATUS_CONSTRAINT_SQL, name=PROJECT_STATUS_CONSTRAINT_NAME),
     )
 
@@ -43,7 +48,8 @@ class Project(Base):
     name = Column(String(255), nullable=True, comment="项目名称；implicit Project 可为空")
     selection_status = Column(String(20), nullable=False, index=True, comment="implicit/selectable")
     workdir_path = Column(String(512), nullable=False, comment="UserWorkspace-relative Workdir path")
-    directory_mode = Column(String(20), nullable=False, comment="managed/linked")
+    directory_mode = Column(String(20), nullable=False, comment="managed/linked/local")
+    local_root = Column(String(512), nullable=True, comment="桌面本地工作区相对路径；local 模式使用")
     status = Column(String(20), nullable=False, default="active", server_default="active", index=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True, comment="软删除时间")
     idempotency_key = Column(String(128), nullable=True, comment="幂等创建键")
@@ -61,6 +67,7 @@ class Project(Base):
             "selection_status": self.selection_status,
             "workdir_path": self.workdir_path,
             "directory_mode": self.directory_mode,
+            "local_root": self.local_root,
             "status": self.status,
             "deleted_at": format_utc_datetime(self.deleted_at),
             "created_at": format_utc_datetime(self.created_at),

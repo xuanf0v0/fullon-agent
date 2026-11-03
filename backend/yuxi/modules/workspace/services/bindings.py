@@ -23,11 +23,12 @@ class WorkdirBinding:
     project_id: str
     workdir_path: str
     directory_mode: str
+    local_root: str | None = None
 
     @property
     def materialize_managed(self) -> bool:
         """判断该绑定是否需要在事务提交后物化目录。"""
-        return self.directory_mode == "managed"
+        return self.directory_mode in {"managed", "local"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +41,7 @@ class AuthorizedWorkdir:
     workdir: Workdir
     project_id: str
     directory_mode: str
+    local_root: str | None = None
 
     @property
     def workdir_path(self) -> str:
@@ -61,8 +63,10 @@ def workdir_binding_from_project(*, agent_session: Session, uid: str, project: P
         raise RuntimeError("Session 缺少 thread_id")
     workdir_path = str(project.workdir_path or "")
     directory_mode = str(project.directory_mode or "")
-    if not workdir_path or directory_mode not in {"managed", "linked"}:
+    if not workdir_path or directory_mode not in {"managed", "linked", "local"}:
         raise RuntimeError("Project Workdir 绑定无效")
+    if directory_mode == "local" and not project.local_root:
+        raise RuntimeError("本地 Project 缺少 local_root")
     return WorkdirBinding(
         session_record_id=int(agent_session.id),
         thread_id=thread_id,
@@ -70,6 +74,7 @@ def workdir_binding_from_project(*, agent_session: Session, uid: str, project: P
         project_id=project_id,
         workdir_path=workdir_path,
         directory_mode=directory_mode,
+        local_root=project.local_root if directory_mode == "local" else None,
     )
 
 
@@ -118,6 +123,7 @@ async def resolve_authorized_session_workdir(
         workdir=Workdir.open_existing(str(uid), binding.workdir_path),
         project_id=binding.project_id,
         directory_mode=binding.directory_mode,
+        local_root=binding.local_root,
     )
 
 

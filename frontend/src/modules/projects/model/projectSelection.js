@@ -47,3 +47,15 @@ export const formatRelativeTime = (value, now = Date.now()) => {
   if (elapsed < 365 * day) return `${Math.floor(elapsed / (30 * day))}个月前`
   return `${Math.floor(elapsed / (365 * day))}年前`
 }
+
+
+/**
+ * 新建项目时优先使用显式选中的目录（来自历史对话），
+ * 否则同步到工作区页面当前所在目录；根目录不可直接作为项目目录。
+ */
+export const resolveInitialProjectPath = (selectedPath = '', workspacePath = '/') => {
+  const explicit = String(selectedPath || '').replace(/^\/+|\/+$/g, '')
+  if (explicit) return `/${explicit}`
+  const current = String(workspacePath || '').replace(/^\/+|\/+$/g, '')
+  return current ? `/${current}` : ''
+}

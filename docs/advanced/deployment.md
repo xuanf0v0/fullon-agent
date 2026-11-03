@@ -117,7 +117,7 @@ API、Web 与 MinIO 的项目文件在构建时明确权限：源码和配置归
 docker compose --env-file .env.prod -f docker-compose.prod.yml --profile container --profile all up -d --build
 ```
 
-`app-init` 以 UID/GID 1000 运行，等待 PostgreSQL 健康与 `storage-init` 成功后，在数据库锁内完成 Schema 和共享内容初始化。它为确认空库建立 business 版本 2 与 knowledge 版本 2 基线，包含当前表、索引、约束和 LangGraph checkpoint 表；当前版本跳过建表，其他版本不匹配会明确失败。随后同步系统配置定义、内置模型供应商、Agent、MCP 和 Skill 来源文件，API 与 worker 等待全部步骤成功。应用启动不自动迁移历史数据。[版本 1 基线决定](../develop-guides/decisions/implemented/2026-10-19-schema-baseline-one.md)说明当前结构和历史升级路径的收敛；编号重置不代表旧库已完成结构变更，历史 `1/1` 标记也不能作为结构完整的证明。
+`app-init` 以 UID/GID 1000 运行，等待 PostgreSQL 健康与 `storage-init` 成功后，在数据库锁内完成 Schema 和共享内容初始化。它为确认空库建立 business 版本 3 与 knowledge 版本 2 基线，包含当前表、索引、约束和 LangGraph checkpoint 表；当前版本跳过建表，其他版本不匹配会明确失败。随后同步系统配置定义、内置模型供应商、Agent、MCP 和 Skill 来源文件，API 与 worker 等待全部步骤成功。应用启动不自动迁移历史数据。[版本 1 基线决定](../develop-guides/decisions/implemented/2026-10-19-schema-baseline-one.md)说明当前结构和历史升级路径的收敛；编号重置不代表旧库已完成结构变更，历史 `1/1` 标记也不能作为结构完整的证明。
 
 ### 可选关闭知识库
 
@@ -166,6 +166,8 @@ API 和 worker 在各自进程内继续校验密钥及 Schema，创建连接、�
 审计无阻断后运行 `uv run --no-sync python -m yuxi.migrations.knowledge_directories --apply`。转换逐条提交，可在中断后重跑；文件 ID、原件地址、Markdown 和索引身份保留，叶子重名按稳定顺序加后缀。只有全部数据收敛且约束建立成功，才发布 knowledge 版本 2。转换后重新执行审计、回读文件和对象，再运行 app-init 并启动 API/worker。跨版本回退需要恢复维护前整套备份，不能只回退代码。只读连接器不执行目录转换。设计与验证见[目录与导入决策](../develop-guides/decisions/implemented/2026-08-24-knowledge-folder-materialization.md)。
 
 业务域 v1 升级到 v2 新增定时任务的一次性执行方式。停止 API、worker 后先运行 `uv run --no-sync python -m yuxi.migrations.one_shot_schedules` 只读审计，确认 `schedule_kind`、`run_at` 与 `cron_expression` 可空性的现状；无阻断后运行 `uv run --no-sync python -m yuxi.migrations.one_shot_schedules --apply`。脚本幂等补齐列、CHECK 约束并记录 business 版本 2，既有任务全部保留为周期任务；版本行不存在时明确失败，需先由 app-init 建立基线。转换完成后重新执行审计、回读任务行，再运行 app-init 并启动 API/worker。设计见[一次性定时任务决策](../develop-guides/decisions/implemented/2026-10-29-fullon-port.md)。
+
+业务域 v2 升级到 v3 新增桌面本地 Project。一次性的 `one_shot_schedules` 转换完成后，仍停止 API、worker，运行 `uv run --no-sync python -m yuxi.migrations.local_projects` 只读审计 `local_root` 列、目录模式约束和版本；确认无阻断后运行 `--apply`。脚本幂等补齐 `projects.local_root`、重建目录模式约束并记录 business 版本 3；只允许从 v2 或 v3 执行。转换后重新审计，再运行 app-init 并启动 API/worker。设计与验证见[本地 Project 决策](../develop-guides/decisions/implemented/2026-11-03-local-desktop-projects.md)。
 
 应用不写入身份操作日志，初始 Schema 不创建 `operation_logs` 表。
 

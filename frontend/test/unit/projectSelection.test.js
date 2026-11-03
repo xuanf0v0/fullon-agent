@@ -6,7 +6,8 @@ import {
   fillProjectNameFromFolder,
   filterProjects,
   formatRelativeTime,
-  projectNameFromPath
+  projectNameFromPath,
+  resolveInitialProjectPath
 } from '../../src/modules/projects/model/projectSelection.js'
 
 test('Project 搜索按名称过滤且无匹配时返回空列表', () => {
@@ -48,4 +49,12 @@ test('目录名超长时按项目名称上限截断，无有效末段时返回�
   assert.equal(projectNameFromPath(`/${longName}`).length, PROJECT_NAME_MAX_LENGTH)
   assert.equal(projectNameFromPath('/'), '')
   assert.equal(projectNameFromPath(''), '')
+})
+
+
+test('新建项目默认同步到工作区当前目录，历史目录优先', () => {
+  assert.equal(resolveInitialProjectPath('', '/projects/demo'), '/projects/demo')
+  assert.equal(resolveInitialProjectPath('', '/'), '')
+  assert.equal(resolveInitialProjectPath('/history/task', '/projects/demo'), '/history/task')
+  assert.equal(resolveInitialProjectPath('', ''), '')
 })

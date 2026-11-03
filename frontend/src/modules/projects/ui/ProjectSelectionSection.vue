@@ -158,9 +158,39 @@
         />
       </label>
 
+      <div v-if="localProjectAvailable" class="project-form-field">
+        <span>项目目录来源</span>
+        <div class="project-source-toggle" role="group" aria-label="项目目录来源">
+          <button
+            type="button"
+            :class="{ active: projectSource === 'local' }"
+            :disabled="creatingProject"
+            @click="switchProjectSource('local')"
+          >
+            本地工作区
+          </button>
+          <button
+            type="button"
+            :class="{ active: projectSource === 'server' }"
+            :disabled="creatingProject"
+            @click="switchProjectSource('server')"
+          >
+            服务端工作区
+          </button>
+        </div>
+      </div>
+
       <div class="project-form-field">
-        <span>项目目录（工作区）</span>
+        <span>{{ projectDirectoryLabel }}</span>
+        <LocalWorkspacePathPicker
+          v-if="projectSource === 'local'"
+          v-model="linkedPath"
+          :active="createModalOpen"
+          :disabled="creatingProject || localProjectChecking"
+          @loading-change="pickerLoading = $event"
+        />
         <WorkspacePathPicker
+          v-else
           v-model="linkedPath"
           :active="createModalOpen"
           :disabled="creatingProject"
@@ -169,7 +199,10 @@
           @loading-change="pickerLoading = $event"
           @folder-created="handleFolderCreated"
         />
-        <small>从工作区选择已有目录；该目录直接作为项目目录，文件保存在其中，不会另建同名文件夹。</small>
+        <small v-if="projectSource === 'local'">
+          从桌面工作区选择子目录；Agent 通过本地桥读写，文件不会复制到服务端。
+        </small>
+        <small v-else>从工作区选择已有目录；该目录直接作为项目目录，文件保存在其中，不会另建同名文件夹。</small>
       </div>
     </div>
   </a-modal>
@@ -192,8 +225,10 @@ import {
   MessageSquare,
   Search
 } from '@lucide/vue'
+import { useUserStore } from '@/modules/identity'
 import { projectApi } from '@/apis/project_api'
 import WorkspacePathPicker from '@/modules/workspace/ui/WorkspacePathPicker.vue'
+import LocalWorkspacePathPicker from '@/modules/projects/ui/LocalWorkspacePathPicker.vue'
 import { useProjectsStore } from '@/modules/projects/model/projects'
 import {
   AUTO_PROJECT_ID,
@@ -201,8 +236,16 @@ import {
   filterProjects,
   fillProjectNameFromFolder,
   formatRelativeTime,
-  projectNameFromPath
+  projectNameFromPath,
+  resolveInitialProjectPath
 } from '@/modules/projects/model/projectSelection'
+import {
+  loadLocalFolderConnection,
+  localFolderBrokerInfo,
+  personalWorkspacePath,
+  queryLocalPermission
+} from '@/modules/workspace'
+import { registerLocalFolderBroker } from '@/apis/workspace_api'
 
 const props = defineProps({
   upward: { type: Boolean, default: false },
@@ -214,6 +257,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 const projectsStore = useProjectsStore()
+const userStore = useUserStore()
 const { projects, isLoading: loadingProjects, error: projectsError } = storeToRefs(projectsStore)
 
 const dropdownOpen = ref(false)
@@ -226,6 +270,9 @@ const creatingProject = ref(false)
 const projectName = ref('')
 const projectCreationRequestId = ref('')
 const linkedPath = ref('')
+const projectSource = ref('server')
+const localProjectAvailable = ref(false)
+const localProjectChecking = ref(false)
 const pickerLoading = ref(false)
 const historyQuery = ref('')
 const historyCandidates = ref([])
@@ -263,9 +310,13 @@ const currentProjectHint = computed(() => {
   if (isAutoOrEmpty.value) {
     return props.allowAuto ? '不使用项目（发送时创建独立目录）' : '请选择任务使用的项目'
   }
+  if (currentProject.value?.directory_mode === 'local') return '桌面本地工作区'
   if (currentProject.value?.directory_mode === 'linked') return '工作区已有目录'
   return '系统管理目录'
 })
+const projectDirectoryLabel = computed(() =>
+  projectSource.value === 'local' ? '项目目录（本地工作区）' : '项目目录（工作区）'
+)
 const filteredProjects = computed(() => filterProjects(projects.value, projectQuery.value))
 
 const selectProject = (projectId) => {
@@ -288,11 +339,50 @@ const loadProjects = async () => {
   }
 }
 
-const openCreateModal = (selectedPath = '') => {
+const detectLocalProject = async () => {
+  localProjectAvailable.value = false
+  if (!userStore.uid || !window.fullonDesktop) return false
+  localProjectChecking.value = true
+  try {
+    const connection = await loadLocalFolderConnection(userStore.uid)
+    if (connection?.kind !== 'desktop') return false
+    const permission = await queryLocalPermission(connection)
+    if (permission !== 'granted') return false
+    const broker = await localFolderBrokerInfo(connection)
+    if (!broker?.urls?.length || !broker.token) return false
+    // 桌面主进程重启后 token 会变化，首次进入会话页也要重新登记。
+    await registerLocalFolderBroker(broker.urls, broker.token, connection.folderName || '本地文件夹')
+    localProjectAvailable.value = true
+    return true
+  } catch {
+    return false
+  } finally {
+    localProjectChecking.value = false
+  }
+}
+
+const switchProjectSource = (source) => {
+  if (source === projectSource.value) return
+  projectSource.value = source
+  linkedPath.value = source === 'server' ? resolveInitialProjectPath('', personalWorkspacePath.value) : ''
+  pickerLoading.value = false
+}
+
+const openCreateModal = async (selectedPath = '') => {
   dropdownOpen.value = false
   projectName.value = ''
   projectCreationRequestId.value = requestId()
-  linkedPath.value = selectedPath
+  const localAvailable = await detectLocalProject()
+  if (selectedPath) {
+    projectSource.value = 'server'
+    linkedPath.value = selectedPath
+  } else if (localAvailable) {
+    projectSource.value = 'local'
+    linkedPath.value = ''
+  } else {
+    projectSource.value = 'server'
+    linkedPath.value = resolveInitialProjectPath('', personalWorkspacePath.value)
+  }
   createModalOpen.value = true
 }
 
@@ -303,7 +393,7 @@ const handleCreateProject = async () => {
     const project = await projectApi.createProject({
       requestId: projectCreationRequestId.value,
       name: projectName.value.trim() || projectNameFromPath(linkedPath.value),
-      mode: 'linked',
+      mode: projectSource.value === 'local' ? 'local' : 'linked',
       path: linkedPath.value
     })
     addAndSelectProject(project)
@@ -619,6 +709,10 @@ onUnmounted(() => {
   gap: 18px;
 }
 
+.project-source-toggle { display: inline-flex; padding: 2px; border: 1px solid var(--gray-200); border-radius: 7px; width: fit-content; }
+.project-source-toggle button { border: 0; background: transparent; color: var(--gray-600); padding: 5px 12px; border-radius: 5px; cursor: pointer; }
+.project-source-toggle button.active { background: var(--gray-100); color: var(--gray-900); }
+.project-source-toggle button:disabled { cursor: not-allowed; opacity: 0.6; }
 .project-form-field {
   display: flex;
   flex-direction: column;

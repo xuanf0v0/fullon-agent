@@ -18,26 +18,26 @@ _MAX_WRITE_BYTES = 1024 * 1024
 class ListLocalSpaceInput(BaseModel):
     """声明要浏览的工作区目录。"""
 
-    path: str = Field(default="", description="相对工作区根目录的目录路径；根目录留空")
+    path: str = Field(default="", description="相对当前工作区根目录或本地项目目录的目录路径；根目录留空")
 
 
 class ReadLocalSpaceInput(BaseModel):
     """声明要读取的工作区文件。"""
 
-    path: str = Field(description="相对工作区根目录的文件路径，例如 notes/today.md")
+    path: str = Field(description="相对当前工作区根目录或本地项目目录的文件路径，例如 notes/today.md")
 
 
 class WriteLocalSpaceInput(BaseModel):
     """声明要写入的工作区文件。"""
 
-    path: str = Field(description="相对工作区根目录的文件路径，例如 notes/today.md")
+    path: str = Field(description="相对当前工作区根目录或本地项目目录的文件路径，例如 notes/today.md")
     content: str = Field(description="要写入的 UTF-8 文本；会覆盖原文件")
 
 
 class DeleteLocalSpaceInput(BaseModel):
     """声明要删除的工作区文件或空目录。"""
 
-    path: str = Field(description="相对工作区根目录的文件或空目录路径")
+    path: str = Field(description="相对当前工作区根目录或本地项目目录的文件或空目录路径")
 
 
 LIST_LOCAL_SPACE_DESCRIPTION = """
@@ -151,6 +151,30 @@ async def _uid_from_runtime(runtime: ToolRuntime) -> str:
     return uid
 
 
+def _scoped_path(runtime: ToolRuntime, value: str) -> str:
+    """把工具路径限定到当前本地项目根目录；普通工作区使用全局授权根。"""
+    local_root = runtime_context_value(runtime, "local_project_root")
+    path = _normalize_relative_path(value)
+    if local_root is None:
+        return path
+    prefix = _normalize_relative_path(local_root)
+    return "/".join(part for part in (prefix, path) if part)
+
+
+def _unscoped_path(runtime: ToolRuntime, value: str) -> str:
+    """把代理返回的项目内路径还原为模型使用的相对路径。"""
+    local_root = runtime_context_value(runtime, "local_project_root")
+    if local_root is None:
+        return value
+    prefix = _normalize_relative_path(local_root)
+    path = _normalize_relative_path(value)
+    if path == prefix:
+        return ""
+    if path.startswith(f"{prefix}/"):
+        return path[len(prefix) + 1 :]
+    return path
+
+
 @tool(
     category="builtin",
     tags=["文件", "工作区"],
@@ -161,11 +185,11 @@ async def _uid_from_runtime(runtime: ToolRuntime) -> str:
 async def list_local_space_files(runtime: ToolRuntime, path: str = "") -> dict:
     """列出用户桌面工作区中的一层目录。"""
     uid = await _uid_from_runtime(runtime)
-    normalized = _normalize_relative_path(path)
+    normalized = _scoped_path(runtime, path)
     data = await _call_broker(uid, "list", normalized)
     return {
         "folder": data.get("folder"),
-        "path": data.get("path", normalized),
+        "path": _unscoped_path(runtime, data.get("path", normalized)),
         "entries": data.get("entries", []),
         "truncated": bool(data.get("truncated")),
     }
@@ -181,12 +205,12 @@ async def list_local_space_files(runtime: ToolRuntime, path: str = "") -> dict:
 async def read_local_space_file(runtime: ToolRuntime, path: str) -> dict:
     """读取用户桌面工作区中的文本文件或二进制元数据。"""
     uid = await _uid_from_runtime(runtime)
-    normalized = _normalize_relative_path(path)
+    normalized = _scoped_path(runtime, path)
     if not normalized:
         raise ValueError("请提供要读取的文件路径")
     data = await _call_broker(uid, "read", normalized)
     return {
-        "path": data.get("path", normalized),
+        "path": _unscoped_path(runtime, data.get("path", normalized)),
         "kind": data.get("kind"),
         "size": data.get("size"),
         "mime": data.get("mime"),
@@ -206,7 +230,7 @@ async def read_local_space_file(runtime: ToolRuntime, path: str) -> dict:
 async def write_local_space_file(runtime: ToolRuntime, path: str, content: str) -> dict:
     """在桌面工作区中创建或覆盖 UTF-8 文本文件。"""
     uid = await _uid_from_runtime(runtime)
-    normalized = _normalize_relative_path(path)
+    normalized = _scoped_path(runtime, path)
     if not normalized:
         raise ValueError("请提供要写入的文件路径")
     if not isinstance(content, str):
@@ -214,7 +238,7 @@ async def write_local_space_file(runtime: ToolRuntime, path: str, content: str) 
     if len(content.encode("utf-8")) > _MAX_WRITE_BYTES:
         raise ValueError("单次写入不能超过 1 MiB")
     data = await _call_broker(uid, "write", normalized, content=content)
-    return {"path": data.get("path", normalized), "size": data.get("size"), "written": True}
+    return {"path": _unscoped_path(runtime, data.get("path", normalized)), "size": data.get("size"), "written": True}
 
 
 @tool(
@@ -230,5 +254,6 @@ async def delete_local_space_path(runtime: ToolRuntime, path: str) -> dict:
     normalized = _normalize_relative_path(path)
     if not normalized:
         raise ValueError("不能删除工作区根目录")
+    normalized = _scoped_path(runtime, normalized)
     data = await _call_broker(uid, "delete", normalized)
-    return {"path": data.get("path", normalized), "kind": data.get("kind"), "deleted": True}
+    return {"path": _unscoped_path(runtime, data.get("path", normalized)), "kind": data.get("kind"), "deleted": True}

@@ -40,7 +40,9 @@ def test_idempotency_rejection_is_a_protocol_free_conflict(owner):
             projects._require_matching_creation_intent(
                 SimpleNamespace(status="active", name="old", directory_mode="linked", workdir_path="projects/test"),
                 name="new",
+                directory_mode="linked",
                 workdir_path="projects/test",
+                local_root=None,
             )
     error = caught.value
     assert isinstance(error, DomainError)

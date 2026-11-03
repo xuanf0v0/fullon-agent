@@ -19,22 +19,40 @@ MAX_PROJECT_NAME_LENGTH = 255
 
 
 async def create_project_view(*, uid: str, request_id: str, name: str, directory_mode: str, workdir_path: str | None, db) -> dict:
-    """幂等创建 linked selectable Project，同 request_id 重放时要求创建意图一致。"""
+    """幂等创建 linked/local selectable Project，同 request_id 重放时要求创建意图一致。"""
     normalized_request_id = (request_id or "").strip()
     if not normalized_request_id:
         raise InvalidInputError("request_id 不能为空")
-    if directory_mode != "linked" or not (workdir_path or "").strip():
+    if directory_mode not in {"linked", "local"}:
         raise InvalidInputError("手动创建项目必须选择目录")
     normalized_name = _normalize_project_name(name, required=True)
-    try:
-        normalized_path = normalize_workdir_path(workdir_path)
-    except ValueError as exc:
-        raise InvalidOperationError(str(exc)) from exc
+    if directory_mode == "local":
+        try:
+            normalized_path = normalize_local_project_path(workdir_path)
+        except ValueError as exc:
+            raise InvalidOperationError(str(exc)) from exc
+        local_root = normalized_path
+        intent_path = None
+    else:
+        if not (workdir_path or "").strip():
+            raise InvalidInputError("手动创建项目必须选择目录")
+        try:
+            normalized_path = normalize_workdir_path(workdir_path)
+        except ValueError as exc:
+            raise InvalidOperationError(str(exc)) from exc
+        local_root = None
+        intent_path = normalized_path
 
     repository = ProjectRepository(db)
     existing = await repository.get_by_idempotency_key(normalized_request_id, uid)
     if existing is not None:
-        _require_matching_creation_intent(existing, name=normalized_name, workdir_path=normalized_path)
+        _require_matching_creation_intent(
+            existing,
+            name=normalized_name,
+            directory_mode=directory_mode,
+            workdir_path=intent_path,
+            local_root=local_root,
+        )
         return existing.to_dict()
 
     try:
@@ -54,7 +72,13 @@ async def create_project_view(*, uid: str, request_id: str, name: str, directory
         replay = await repository.get_by_idempotency_key(normalized_request_id, uid)
         if replay is None:
             raise StateConflictError("Project 创建冲突")
-        _require_matching_creation_intent(replay, name=normalized_name, workdir_path=normalized_path)
+        _require_matching_creation_intent(
+            replay,
+            name=normalized_name,
+            directory_mode=directory_mode,
+            workdir_path=intent_path,
+            local_root=local_root,
+        )
         project = replay
     return project.to_dict()
 
@@ -83,17 +107,24 @@ async def create_project_record(
 ) -> Project:
     """在当前事务内创建 Project，但不提交或物化 managed 目录。"""
     normalized_name = _normalize_project_name(name, required=selection_status == "selectable")
-    if directory_mode not in {"managed", "linked"}:
-        raise InvalidInputError("directory_mode 必须是 managed 或 linked")
+    if directory_mode not in {"managed", "linked", "local"}:
+        raise InvalidInputError("directory_mode 必须是 managed、linked 或 local")
     if selection_status not in {"implicit", "selectable"}:
         raise InvalidInputError("selection_status 非法")
 
     project_id = str(uuid.uuid4())
+    local_root = None
     if directory_mode == "managed":
         if workdir_path is not None:
             raise InvalidInputError("managed Project 不接受 workdir_path")
         await _lock_project_workdir_changes(db=db, uid=uid)
         reserved_paths = await ProjectRepository(db).list_bound_workdir_paths_for_user(uid)
+        normalized_path = allocate_default_user_workdir_path(uid, project_id, reserved_paths=reserved_paths)
+    elif directory_mode == "local":
+        local_root = normalize_local_project_path(workdir_path)
+        await _lock_project_workdir_changes(db=db, uid=uid)
+        reserved_paths = await ProjectRepository(db).list_bound_workdir_paths_for_user(uid)
+        # 本地项目仍使用服务端影子目录承载会话元数据；项目文件由本地代理访问。
         normalized_path = allocate_default_user_workdir_path(uid, project_id, reserved_paths=reserved_paths)
     else:
         if workdir_path is None:
@@ -114,6 +145,7 @@ async def create_project_record(
         selection_status=selection_status,
         workdir_path=normalized_path,
         directory_mode=directory_mode,
+        local_root=local_root,
         idempotency_key=idempotency_key.strip() if idempotency_key else None,
     )
     return await ProjectRepository(db).add(project)
@@ -204,9 +236,33 @@ def _normalize_project_name(name: str | None, *, required: bool) -> str | None:
     return normalized_name or None
 
 
-def _require_matching_creation_intent(project: Project, *, name: str, workdir_path: str) -> None:
+def _require_matching_creation_intent(
+    project: Project,
+    *,
+    name: str,
+    directory_mode: str,
+    workdir_path: str | None,
+    local_root: str | None,
+) -> None:
     """要求已有 Project 仍有效且匹配当前幂等创建意图。"""
     if project.status == "deleted":
         raise StateConflictError("request_id 已用于已删除的 Project")
-    if project.name != name or project.directory_mode != "linked" or project.workdir_path != workdir_path:
+    if project.name != name or project.directory_mode != directory_mode:
         raise StateConflictError("request_id 已用于其他 Project 创建意图")
+    if directory_mode == "local" and project.local_root != local_root:
+        raise StateConflictError("request_id 已用于其他 Project 创建意图")
+    if directory_mode == "linked" and project.workdir_path != workdir_path:
+        raise StateConflictError("request_id 已用于其他 Project 创建意图")
+
+
+def normalize_local_project_path(value: str | None) -> str:
+    """规范化桌面本地工作区相对路径；工作区根目录不是有效项目目录。"""
+    raw = str(value or "").strip().replace("\\", "/").strip("/")
+    if not raw:
+        raise ValueError("本地项目目录不能是工作区根目录")
+    if len(raw) > 512:
+        raise ValueError("本地项目目录过长")
+    for part in raw.split("/") if raw else []:
+        if part in {"", ".", ".."} or ":" in part or "\x00" in part:
+            raise ValueError("非法本地项目目录")
+    return raw

@@ -195,6 +195,11 @@ class BaseContext:
         metadata={"name": "Workdir Virtual Path", "configurable": False, "hide": True},
     )
 
+    local_project_root: str | None = field(
+        default=None,
+        metadata={"name": "Local Project Root", "configurable": False, "hide": True},
+    )
+
     agent_slug: str | None = field(default=None, metadata={"configurable": False, "hide": True})
 
     skill_runtime_snapshot: SkillRuntimeSnapshot | None = field(default=None, repr=False, metadata={"configurable": False, "hide": True})

@@ -199,6 +199,7 @@ import {
 } from '@/modules/workspace'
 import { knowledgeBaseApi } from '@/apis/knowledge_api'
 import { useUserStore } from '@/modules/identity/model/user'
+import { setPersonalWorkspacePath } from '@/modules/workspace/model/workspacePathState'
 import {
   createWorkspaceDirectory,
   deleteWorkspacePath,
@@ -458,6 +459,7 @@ const loadWorkspaceEntries = async (path = '/') => {
     const response = await getWorkspaceTree(path)
     entries.value = response.entries || []
     currentPath.value = path
+    setPersonalWorkspacePath(path)
     knowledgeBreadcrumbItems.value = []
     workspaceBreadcrumbItems.value = buildWorkspaceBreadcrumbItems()
     syncSelectedPaths()

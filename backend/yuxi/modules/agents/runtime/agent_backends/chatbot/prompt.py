@@ -27,7 +27,18 @@ def build_prompt_with_context(context):
     workdir_path = str(getattr(context, "workdir_path", "") or "").rstrip("/")
     if not workdir_path:
         raise ValueError("Agent context 缺少当前 Workdir 路径")
-    filesystem_prompt = f"""
+    local_root = getattr(context, "local_project_root", None)
+    if local_root is not None:
+        filesystem_prompt = f"""
+<| 本地项目工作区 |>
+当前项目绑定桌面本地工作区目录（相对路径 {local_root or "/"}）：
+- 查看、读取、写入、删除项目文件必须使用 list_local_space_files、read_local_space_file、write_local_space_file、delete_local_space_path
+- 这些工具已限定在当前本地项目目录内；不要用服务端文件工具操作本地项目文件
+- 服务端 Project Workdir {workdir_path} 仅承载会话元数据和附件，不是本地项目文件
+- 未经用户明确要求，不得访问本地项目目录之外的文件
+"""
+    else:
+        filesystem_prompt = f"""
 <| 文件系统约束 |>
 当前 Project Workdir 为 {workdir_path}，也是默认工作目录：
 - {workdir_path}/uploads/：用户上传文件的建议目录；Agent 可以覆盖，但非必要不修改原文件

@@ -7,3 +7,17 @@ export {
   traverseDirectoryEntry,
   validateFolderUploadEntries
 } from './model/workspaceFolderUpload'
+
+export {
+  loadLocalFolderConnection,
+  localFolderBrokerInfo,
+  queryLocalPermission,
+  readLocalDirectory
+} from './model/localFolderSync'
+
+export {
+  localWorkspacePath,
+  personalWorkspacePath,
+  setLocalWorkspacePath,
+  setPersonalWorkspacePath
+} from './model/workspacePathState'

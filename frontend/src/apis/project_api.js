@@ -9,7 +9,7 @@ export const projectApi = {
       name,
       workdir: {
         mode,
-        ...(mode === 'linked' && path ? { path: String(path).replace(/^\/+/, '') } : {})
+        ...((mode === 'linked' || mode === 'local') && path ? { path: String(path).replace(/^\/+/, '') } : {})
       }
     }),
 

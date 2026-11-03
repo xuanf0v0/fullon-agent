@@ -7,7 +7,13 @@ import pytest
 
 import yuxi.modules.workspace.services.projects as svc
 from yuxi.modules.workspace.paths import ensure_user_workspace, user_workspace_dir
-from yuxi.shared.errors import DomainError, InvalidInputError, InvalidOperationError, ResourceNotFoundError
+from yuxi.shared.errors import (
+    DomainError,
+    InvalidInputError,
+    InvalidOperationError,
+    ResourceNotFoundError,
+    StateConflictError,
+)
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.unit]
 
@@ -338,3 +344,89 @@ async def test_delete_project_archives_idle_threads_in_one_commit(monkeypatch):
     assert result == {"message": "项目已删除，其中对话已归档", "archived_threads": 3}
     assert calls[0][0] is project
     assert db.commits == 1
+
+
+async def test_local_project_binding_preserves_local_root():
+    """本地项目绑定把 local_root 带进运行时，同时使用服务端影子 Workdir。"""
+    from types import SimpleNamespace
+
+    from yuxi.modules.workspace.services.bindings import workdir_binding_from_project
+    from yuxi.modules.workspace.services.projects import normalize_local_project_path
+
+    project = SimpleNamespace(
+        id="project-1",
+        uid="user",
+        workdir_path="projects/20261103/shadow",
+        directory_mode="local",
+        local_root="demo",
+    )
+    session = SimpleNamespace(id=7, thread_id="thread-1", project_id="project-1")
+    binding = workdir_binding_from_project(agent_session=session, uid="user", project=project)
+
+    assert binding.local_root == "demo"
+    assert binding.materialize_managed is True
+    assert normalize_local_project_path("/demo/notes/") == "demo/notes"
+    with pytest.raises(ValueError):
+        normalize_local_project_path("/")
+
+
+class _IdempotentDb(_Db):
+    """按 idempotency_key 返回已创建项目，模拟唯一约束下的重放查询。"""
+
+    async def scalar(self, _statement):
+        return next((item for item in self.items if getattr(item, "idempotency_key", None)), None)
+
+
+async def test_local_project_allocates_shadow_workdir_and_replays(monkeypatch, tmp_path: Path):
+    """本地项目保存相对 local_root，服务端只分配影子 Workdir，并支持幂等重放。"""
+    monkeypatch.setattr("yuxi.modules.workspace.paths.get_user_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(svc.uuid, "uuid4", lambda: UUID("a1b2c3d4-e5f6-4789-8123-456789abcdef"))
+    db = _IdempotentDb()
+
+    first = await svc.create_project_view(
+        uid="user-1",
+        request_id="request-local",
+        name="Local demo",
+        directory_mode="local",
+        workdir_path="demo/notes",
+        db=db,
+    )
+    replay = await svc.create_project_view(
+        uid="user-1",
+        request_id="request-local",
+        name="Local demo",
+        directory_mode="local",
+        workdir_path="/demo/notes/",
+        db=db,
+    )
+
+    assert first["directory_mode"] == "local"
+    assert first["local_root"] == "demo/notes"
+    assert first["workdir_path"].startswith("projects/")
+    assert first["workdir_path"] != first["local_root"]
+    assert replay["id"] == first["id"]
+    assert db.commits == 1
+
+    with pytest.raises(StateConflictError):
+        await svc.create_project_view(
+            uid="user-1",
+            request_id="request-local",
+            name="Local demo",
+            directory_mode="local",
+            workdir_path="demo/other",
+            db=db,
+        )
+
+
+@pytest.mark.parametrize("path", ["", "/", "../outside", "demo/../outside", "C:/outside"])
+async def test_local_project_rejects_root_escape_paths(path: str):
+    """本地项目目录必须是工作区内的非根相对路径。"""
+    with pytest.raises(DomainError):
+        await svc.create_project_view(
+            uid="user-1",
+            request_id=f"request-local-{path}",
+            name="Invalid local",
+            directory_mode="local",
+            workdir_path=path,
+            db=_Db(),
+        )

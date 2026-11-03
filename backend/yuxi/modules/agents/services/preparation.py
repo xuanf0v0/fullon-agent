@@ -194,6 +194,7 @@ async def prepare_run_execution(
             "runtime_scope_id": run.runtime_scope_id or run.thread_id,
             "workdir_relative_path": workdir_binding.workdir_path,
             "workdir_path": runtime_workdir_path(workdir_binding.workdir_path),
+            "local_project_root": getattr(workdir_binding, "local_root", None),
         }
     )
     configured_prompt = context.system_prompt

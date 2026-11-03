@@ -122,6 +122,7 @@ import {
   saveLocalFolderConnection,
   supportsLocalFolder
 } from '../model/localFolderSync'
+import { setLocalWorkspacePath } from '../model/workspacePathState'
 import {
   registerLocalFolderBroker,
   unregisterLocalFolderBroker
@@ -181,6 +182,7 @@ async function loadDirectory() {
     const nextEntries = await readLocalDirectory(connection.value, parts.value)
     if (seq !== loadSeq) return
     entries.value = nextEntries
+    setLocalWorkspacePath(parts.value.join('/'))
   } catch (err) {
     if (seq !== loadSeq) return
     entries.value = []
@@ -308,6 +310,7 @@ async function disconnect() {
   connection.value = null
   permission.value = ''
   agentAccess.value = false
+  setLocalWorkspacePath('')
   entries.value = []
   parts.value = []
   closePreview()
@@ -363,6 +366,7 @@ watch(
     connection.value = null
     permission.value = ''
     agentAccess.value = false
+    setLocalWorkspacePath('')
     parts.value = []
     entries.value = []
     closePreview()
