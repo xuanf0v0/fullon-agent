@@ -25,6 +25,11 @@ test('项目创建目录选择器包含尚未绑定的项目目录', () => {
   const picker = source.slice(pickerStart, source.indexOf('/>', pickerStart) + 2)
 
   assert.match(picker, /include-unbound-project-dirs/)
+  assert.match(source, /项目目录（工作区）/)
+  assert.match(source, /从工作区选择已有目录/)
+  const pathPicker = readSource('../../src/modules/workspace/ui/WorkspacePathPicker.vue')
+  assert.match(pathPicker, /aria-label="工作区目录路径"/)
+  assert.match(pathPicker, /name: '工作区', path: '\/'/)
 })
 
 test('交付物保存使用工作区路径选择器并传递目标目录', () => {

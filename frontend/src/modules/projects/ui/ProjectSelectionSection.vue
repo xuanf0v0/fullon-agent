@@ -159,7 +159,7 @@
       </label>
 
       <div class="project-form-field">
-        <span>项目目录</span>
+        <span>项目目录（工作区）</span>
         <WorkspacePathPicker
           v-model="linkedPath"
           :active="createModalOpen"
@@ -169,7 +169,7 @@
           @loading-change="pickerLoading = $event"
           @folder-created="handleFolderCreated"
         />
-        <small>所选目录即项目工作区，文件直接保存在该目录中，不会另建同名文件夹。</small>
+        <small>从工作区选择已有目录；该目录直接作为项目目录，文件保存在其中，不会另建同名文件夹。</small>
       </div>
     </div>
   </a-modal>

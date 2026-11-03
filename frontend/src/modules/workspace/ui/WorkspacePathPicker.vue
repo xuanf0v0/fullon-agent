@@ -1,7 +1,7 @@
 <template>
   <div class="workspace-path-picker" :class="{ disabled }">
     <div class="picker-toolbar">
-      <nav class="picker-breadcrumbs" aria-label="Workspace 目录路径" aria-live="polite">
+      <nav class="picker-breadcrumbs" aria-label="工作区目录路径" aria-live="polite">
         <button
           v-for="item in breadcrumbs"
           :key="item.path"
@@ -145,7 +145,7 @@ const normalizePath = (path) => {
 }
 
 const breadcrumbs = computed(() => {
-  const items = [{ name: 'Workspace', path: '/' }]
+  const items = [{ name: '工作区', path: '/' }]
   let path = ''
   for (const name of currentPath.value.split('/').filter(Boolean)) {
     path += `/${name}`
